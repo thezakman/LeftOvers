@@ -2,6 +2,7 @@
 
 **LeftOvers** is an advanced scanner for detecting leftover or residual files on web servers.
 
+![Screenshot of a comment on a GitHub issue showing an image, added in the Markdown, of an Octocat smiling and raising a tentacle.](LeftOver.png)
 ## 📁 Project Structure
 
 The project is modularized with the following structure:
