@@ -52,7 +52,7 @@ python LeftOvers.py --help
 ## 🔧 Features
 
 - **Intelligent Detection**: Advanced algorithms to filter false positives
-- **Multi-Format Support**: Tests over 120 common file extensions
+- **Multi-Format Support**: Tests over 293 common file extensions
 - **Brute Force Mode**: Tests directories and files using common keywords
 - **Efficient Management**:
   - Intelligently detects and handles large files (>10MB)
