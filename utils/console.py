@@ -5,7 +5,10 @@ Console utilities for LeftOvers. Handles pretty output and formatting.
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
+from rich.progress import (
+    Progress, SpinnerColumn, TextColumn, BarColumn, 
+    TaskProgressColumn, TimeElapsedColumn, TimeRemainingColumn
+)
 
 # Initialize Rich console
 console = Console()
@@ -28,12 +31,14 @@ def print_banner(use_color=True, silent=False):
     else:
         print(banner_text)
 
-def print_info_panel(info_text, use_color=True):
+def print_info_panel(text: str, use_color: bool = True):
     """Print an info panel with the given text."""
     if use_color:
-        console.print(Panel(info_text, title="[bold]Scanner Info[/bold]", border_style="blue"))
+        console.print(Panel(text, title="Scanner Info", border_style="cyan", expand=False))
     else:
-        print(f"Scanner Info: {info_text}")
+        print("\n" + "=" * 50)
+        print(f" {text}")
+        print("=" * 50 + "\n")
 
 def print_large_file_warning(max_size_mb, use_color=True):
     """Print a warning about large file handling."""
@@ -195,3 +200,33 @@ def print_large_file_skipped(url, size_mb, max_size_mb, use_color=True):
         console.print(f"[yellow]{message}[/yellow]")
     else:
         print(message)
+
+def print_url_list_progress(current: int, total: int, url: str, use_color: bool = True):
+    """Print progress information for URL list processing."""
+    percentage = (current / total) * 100
+    
+    if use_color:
+        # Criar uma barra de progresso visual mais compacta
+        filled_blocks = int(percentage / 10)
+        progress_bar = f"[{'█' * filled_blocks}{' ' * (10 - filled_blocks)}]"
+        
+        # Mostrar a informação de progresso em uma linha única e mais limpa
+        console.print(f"[bold blue]── URL {current}/{total} {progress_bar} {percentage:.1f}% ── [cyan]{url}[/cyan][/bold blue]")
+    else:
+        progress_bar = f"[{'#' * int(percentage // 10)}{' ' * (10 - int(percentage // 10))}]"
+        print(f"── URL {current}/{total} {progress_bar} {percentage:.1f}% ── {url}")
+
+def create_url_list_progress(total: int, use_color: bool = True):
+    """Create a progress bar for URL list processing."""
+    progress = Progress(
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        TextColumn("•"),
+        TimeElapsedColumn(),
+        TextColumn("•"),
+        TimeRemainingColumn(),
+        console=console if use_color else None
+    )
+    task_id = progress.add_task("[cyan]Processando URLs...", total=total)
+    return progress, task_id

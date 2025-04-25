@@ -2,7 +2,8 @@
 
 **LeftOvers** is an advanced scanner for detecting leftover or residual files on web servers.
 
-![Screenshot of a comment on a GitHub issue showing an image, added in the Markdown, of an Octocat smiling and raising a tentacle.](LeftOver.png)
+![LeftOvers Scanner Tool](LeftOver.png)
+
 ## 📋 Installation
 
 ```bash
@@ -45,6 +46,8 @@ LeftOvers/
 
 ## 🚀 Usage
 
+### Basic Examples
+
 ```bash
 # Scan a single URL
 python LeftOvers.py -u http://example.com
@@ -54,9 +57,13 @@ python -m LeftOvers -u http://example.com
 
 # Scan multiple URLs from a file
 python LeftOvers.py -l urls.txt
+```
 
-# Enable brute-force mode
-python LeftOvers.py -u http://example.com -b
+### Advanced Features
+
+```bash
+# Enable brute-force mode with custom wordlist
+python LeftOvers.py -u http://example.com -b --wordlist wordlists/custom.txt
 
 # Export results to JSON file
 python LeftOvers.py -u http://example.com --output results.json
@@ -66,6 +73,15 @@ python LeftOvers.py -u http://example.com --threads 20
 
 # Disable SSL verification
 python LeftOvers.py -u http://example.com --no-ssl-verify
+
+# Ignore results with specific content types
+python LeftOvers.py -u http://example.com -ci text/html -ci image/jpeg
+
+# Filter by status codes (only report 200, 403)
+python LeftOvers.py -u http://example.com -sc 200 -sc 403
+
+# Set custom timeout for requests
+python LeftOvers.py -u http://example.com --timeout 10
 
 # View all available options
 python LeftOvers.py --help
@@ -89,7 +105,7 @@ python LeftOvers.py --help
   - Intelligently detects and handles large files (>10MB)
   - Avoids result duplication
   - Optimized for low resource consumption
-- **Custom Filters**: By status code and content length
+- **Custom Filters**: By status code, content length, and content type
 - **Rich Interface**: Colored console with progress bars
 - **Report Export**: JSON format for integration with other tools
 

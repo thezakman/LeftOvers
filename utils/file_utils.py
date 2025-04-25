@@ -1,7 +1,8 @@
 """
-File utilities for LeftOvers. Handles loading wordlists, URL lists, and exporting results.
+File utilities for the LeftOvers scanner.
 """
 
+import os
 import json
 from datetime import datetime
 from typing import List, Dict, Any
@@ -10,71 +11,76 @@ from utils.logger import logger
 from core.config import DEFAULT_EXTENSIONS
 from app_settings import VERSION
 
-def load_wordlist(wordlist_file: str) -> List[str]:
-    """Load words from a file."""
-    try:
-        with open(wordlist_file, 'r', encoding='utf-8', errors='ignore') as f:
-            words = [line.strip().lower() for line in f if line.strip()]
+def load_wordlist(file_path: str) -> List[str]:
+    """
+    Load a wordlist from a file, one per line.
+    
+    Args:
+        file_path: Path to the wordlist file
         
-        if not words:
-            logger.error(f"Empty wordlist: {wordlist_file}")
-            return []
-            
-        logger.info(f"Loaded {len(words)} words from wordlist {wordlist_file}")
-        return words
+    Returns:
+        List of words
+    """
+    if not os.path.isfile(file_path):
+        logger.error(f"Wordlist file not found: {file_path}")
+        return []
+    
+    try:
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            # Strip whitespace and ignore empty lines and comment lines
+            return [line.strip() for line in f if line.strip() and not line.strip().startswith('#')]
     except Exception as e:
         logger.error(f"Error loading wordlist: {str(e)}")
         return []
 
-def load_url_list(url_list_file: str) -> List[str]:
-    """Load URLs from a file."""
+def load_url_list(file_path: str) -> List[str]:
+    """
+    Load a list of URLs from a file, one per line.
+    
+    Args:
+        file_path: Path to the URL list file
+        
+    Returns:
+        List of URLs
+    """
+    if not os.path.isfile(file_path):
+        logger.error(f"URL list file not found: {file_path}")
+        return []
+    
     try:
-        with open(url_list_file, 'r', encoding='utf-8', errors='ignore') as f:
-            urls = [line.strip() for line in f if line.strip() and not line.startswith('#')]
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            # Strip whitespace and ignore empty lines and comment lines
+            urls = [line.strip() for line in f if line.strip() and not line.strip().startswith('#')]
             
-        if not urls:
-            logger.error(f"Empty URL list file: {url_list_file}")
-            return []
+            # Ensure all URLs have a scheme
+            normalized_urls = []
+            for url in urls:
+                if not url.startswith(('http://', 'https://')):
+                    url = 'http://' + url
+                normalized_urls.append(url)
             
-        logger.info(f"Loaded {len(urls)} URLs from file {url_list_file}")
-        return urls
+            return normalized_urls
     except Exception as e:
         logger.error(f"Error loading URL list: {str(e)}")
         return []
 
 def export_results(results: List[Any], output_file: str) -> bool:
-    """Export results to a JSON file."""
-    if not results:
-        logger.warning("No results to export")
-        return False
+    """
+    Export scan results to a file in JSON format.
+    
+    Args:
+        results: List of ScanResult objects
+        output_file: Path to the output file
         
+    Returns:
+        Boolean indicating if export was successful
+    """
     try:
-        # Convert result objects to dictionaries
-        results_dicts = [r.to_dict() if hasattr(r, 'to_dict') else r for r in results]
-        
-        # Filter out false positives and 404s
-        filtered_results = [
-            r for r in results_dicts 
-            if ((isinstance(r, dict) and 
-                r.get('status_code', 0) != 404 and 
-                not r.get('false_positive', False)) or 
-               (hasattr(r, 'status_code') and 
-                r.status_code != 404 and 
-                not getattr(r, 'false_positive', False)))
-        ]
-        
-        export_data = {
-            "scan_info": {
-                "timestamp": datetime.now().isoformat(),
-                "version": VERSION,
-                "total_tests": len(results),
-                "interesting_findings": len(filtered_results)
-            },
-            "results": filtered_results
-        }
+        # Convert results to dictionaries
+        result_dicts = [result.to_dict() for result in results]
         
         with open(output_file, 'w', encoding='utf-8') as f:
-            json.dump(export_data, f, indent=2)
+            json.dump(result_dicts, f, indent=2)
             
         logger.info(f"Results exported to {output_file}")
         return True

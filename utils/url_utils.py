@@ -3,6 +3,7 @@ URL generation and manipulation utilities.
 """
 
 from typing import List, Tuple, Dict, Any
+import urllib.parse
 
 from utils.logger import logger
 from utils.http_utils import parse_url
@@ -45,6 +46,16 @@ def generate_test_urls(
         if segments:
             path_label = "/".join(segments)
             path_segments = segments
+
+    # Para garantir que os segmentos sejam corretamente capturados, vamos registrar alguns logs
+    if verbose:
+        path = parsed_url.get("path", "").strip('/')
+        if path:
+            segments = path.split('/')
+            logger.debug(f"URL path: {path}")
+            logger.debug(f"Segmentos encontrados: {len(segments)}")
+            for i, segment in enumerate(segments):
+                logger.debug(f"Segment {i+1}: '{segment}'")
 
     # Create a list of base URLs to test
     tests = []
@@ -98,5 +109,24 @@ def generate_test_urls(
             if path_label:
                 test_url = f"{scheme}://{full_hostname}/{path_label}/{word}"
                 tests.append((test_url, f"Brute Force Path: {word}"))
+
+    # Para depuração avançada
+    if verbose:
+        from utils.debug_utils import debug_url_segments
+        debug_url_segments(target_url)
+        
+        # Verificar especificamente os segmentos que serão gerados
+        for i, (url, test_type) in enumerate(tests):
+            if test_type.startswith("Segment"):
+                segment_num = int(test_type.split(' ')[-1])
+                parsed = urllib.parse.urlparse(url)
+                path = parsed.path.strip('/')
+                if path:
+                    segments = path.split('/')
+                    print(f"[DEBUG-GENERATE] URL Base para {test_type}: {url}")
+                    if segment_num <= len(segments):
+                        print(f"[DEBUG-GENERATE] Segment {segment_num} real: '{segments[segment_num-1]}'")
+                    else:
+                        print(f"[DEBUG-GENERATE] Segment {segment_num} não existe em {url}")
 
     return tests, main_page, baseline_responses

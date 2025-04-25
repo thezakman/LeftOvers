@@ -1,5 +1,5 @@
 """
-HTTP utilities for LeftOvers. Handles making HTTP requests and processing URLs.
+HTTP client utilities for the LeftOvers scanner.
 """
 
 import time
@@ -13,18 +13,27 @@ from typing import Dict, Optional, Any, Tuple
 import requests
 import tldextract
 from requests.exceptions import RequestException, Timeout, ConnectionError
+from requests.packages.urllib3.exceptions import InsecureRequestWarning
 
 from utils.logger import logger
-from core.config import USER_AGENTS
-from app_settings import MAX_FILE_SIZE_MB, CHUNK_SIZE
+from app_settings import USER_AGENTS, CHUNK_SIZE, MAX_FILE_SIZE_MB
+
+# Suppress only the InsecureRequestWarning
+requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
+
+def calculate_content_hash(content: bytes) -> str:
+    """Calculate SHA-256 hash of content."""
+    if not content:
+        return ""
+    return hashlib.sha256(content).hexdigest()
 
 class HttpClient:
-    """HTTP client for making requests with various options."""
+    """HTTP client for making requests with configurable options."""
     
     def __init__(self, 
                  headers: Dict[str, str] = None, 
                  timeout: int = 5, 
-                 verify_ssl: bool = True,
+                 verify_ssl: bool = True, 
                  rotate_user_agent: bool = False):
         """Initialize the HTTP client."""
         self.headers = headers or {}
@@ -35,91 +44,103 @@ class HttpClient:
         self.session.headers.update(self.headers)
         self.session.verify = verify_ssl
     
-    def _rotate_user_agent(self):
-        """Rotate to a new random User-Agent if enabled."""
-        if self.rotate_user_agent:
-            new_agent = random.choice(USER_AGENTS)
-            self.session.headers.update({"User-Agent": new_agent})
-            logger.debug(f"Rotating User-Agent: {new_agent}")
+    def rotate_agent(self):
+        """Rotate the User-Agent to a random one from the list."""
+        if self.rotate_user_agent and USER_AGENTS:
+            self.session.headers["User-Agent"] = random.choice(USER_AGENTS)
     
-    def get(self, url: str, allow_redirects: bool = False) -> Dict[str, Any]:
-        """Make a GET request to the specified URL."""
-        if self.rotate_user_agent:
-            self._rotate_user_agent()
+    def get(self, url: str) -> Dict[str, Any]:
+        """
+        Make a GET request to the specified URL.
         
+        Returns:
+            Dictionary containing:
+            - 'success': Boolean indicating if request was successful
+            - 'response': Response object if successful
+            - 'error': Error string if not successful 
+            - 'time': Time taken in seconds
+        """
+        # Rotate User-Agent if needed
+        if self.rotate_user_agent:
+            self.rotate_agent()
+        
+        start_time = time.time()
         result = {
             "success": False,
-            "url": url,
-            "time": 0,
-            "error": None
+            "response": None,
+            "error": None,
+            "time": 0
         }
         
         try:
-            start_time = time.time()
-            
-            # Use streams to avoid downloading large files completely
-            with self.session.get(
-                url, 
-                timeout=self.timeout, 
-                allow_redirects=allow_redirects,
-                stream=True  # Enable streaming to control the download
-            ) as response:
-                result["response"] = response
-                result["success"] = True
+            # Start with HEAD request to check size
+            try:
+                head_response = self.session.head(
+                    url, 
+                    timeout=self.timeout,
+                    allow_redirects=True
+                )
                 
-                # Check file size from Content-Length header
-                content_length = int(response.headers.get('content-length', 0))
-                result["content_length"] = content_length
-                
-                # Calculate size limit in bytes
-                max_size_bytes = MAX_FILE_SIZE_MB * 1024 * 1024
-                
-                if content_length > max_size_bytes:
-                    # Large file - download only initial portion for identification
-                    file_size_mb = content_length / (1024 * 1024)
-                    logger.warning(f"Large file detected: {url} ({file_size_mb:.2f}MB) - exceeds the limit of {MAX_FILE_SIZE_MB}MB")
+                # Check for large files based on Content-Length header
+                content_length = head_response.headers.get('Content-Length')
+                if content_length and int(content_length) > MAX_FILE_SIZE_MB * 1024 * 1024:
+                    # If file is too large, make a partial GET request
+                    headers = self.session.headers.copy()
+                    headers['Range'] = 'bytes=0-8191'  # Get first 8KB only
                     
-                    # Download only first bytes for type identification
-                    content = b""
-                    for chunk in response.iter_content(chunk_size=CHUNK_SIZE):
-                        content += chunk
-                        # Stop after getting enough data for identification
-                        if len(content) >= 16 * 1024:  # 16KB is enough for identification
-                            break
+                    response = self.session.get(
+                        url, 
+                        timeout=self.timeout,
+                        headers=headers,
+                        stream=True,
+                        allow_redirects=True
+                    )
                     
-                    result["content"] = content
+                    # Just read the partial content
+                    content = next(response.iter_content(CHUNK_SIZE), b'')
+                    
+                    # Store the content in the response
+                    response._content = content
+                    
+                    result["success"] = True
+                    result["response"] = response
                     result["large_file"] = True
                     result["partial_content"] = True
-                    
-                    # Terminate the connection
-                    response.close()
                 else:
-                    # For normal files, download completely
-                    result["content"] = response.content
+                    # Normal GET request if file is not too large
+                    response = self.session.get(
+                        url, 
+                        timeout=self.timeout,
+                        allow_redirects=True
+                    )
+                    
+                    result["success"] = True
+                    result["response"] = response
+            except requests.exceptions.RequestException:
+                # If HEAD request fails, try normal GET
+                response = self.session.get(
+                    url, 
+                    timeout=self.timeout,
+                    allow_redirects=True
+                )
+                
+                result["success"] = True
+                result["response"] = response
             
-            result["time"] = time.time() - start_time
-            return result
-            
-        except Timeout:
-            result["error"] = "Timeout"
-            logger.debug(f"Timeout: {url}")
-        except ConnectionError:
-            result["error"] = "Connection Error"
-            logger.debug(f"Connection error: {url}")
-        except RequestException as e:
-            result["error"] = str(e)
-            logger.debug(f"Request error: {url} - {str(e)}")
+        except requests.exceptions.Timeout:
+            result["error"] = "Request timed out"
+        except requests.exceptions.SSLError:
+            result["error"] = "SSL verification failed"
+        except requests.exceptions.ConnectionError:
+            result["error"] = "Connection error"
+        except requests.exceptions.RequestException as e:
+            result["error"] = f"Request error: {str(e)}"
         except Exception as e:
-            result["error"] = str(e)
-            logger.error(f"Unexpected error: {url} - {str(e)}")
-        
+            result["error"] = f"Unexpected error: {str(e)}"
+        finally:
+            result["time"] = time.time() - start_time
+            
         return result
-
-def calculate_content_hash(content: bytes) -> str:
-    """Calculate MD5 hash of content."""
-    if not content:
-        return ""
-    return hashlib.md5(content).hexdigest()
 
 def parse_url(url: str) -> Dict[str, Any]:
     """Parse a URL and extract its components."""

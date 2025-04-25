@@ -42,6 +42,7 @@ def parse_arguments():
     parser.add_argument("-H", "--header", action="append", help="Custom header in format 'Name: Value' (can be used multiple times)")
     parser.add_argument("-c", "--cookie", help="Cookies to include with requests")
     parser.add_argument("-o", "--output", help="File to save results (JSON)")
+    parser.add_argument("--output-per-url", action="store_true", help="Criar um arquivo de saída separado para cada URL (quando usado com --list)")
     parser.add_argument("--test-index", action="store_true", help="Test for index.{extension} on domain URLs")
     
     # Brute force option
@@ -51,6 +52,12 @@ def parse_arguments():
     parser.add_argument("-sc", "--status", help="Filter by status codes (e.g., 200,301,403)")
     parser.add_argument("--min-size", type=int, help="Minimum content size in bytes")
     parser.add_argument("--max-size", type=int, help="Maximum content size in bytes")
+    parser.add_argument(
+        '-ci', '--content-ignore', 
+        action='append', 
+        default=[], 
+        help='Ignore results with specific content types (e.g., "text/html"). Can be used multiple times.'
+    )
     
     # Boolean flags
     parser.add_argument("-nc", "--no-color", action="store_true", help="Disable colors in output")
@@ -116,7 +123,8 @@ def configure_scanner_from_args(args):
         min_content_length=args.min_size,
         max_content_length=args.max_size,
         rotate_user_agent=args.rotate_agents,
-        test_index=args.test_index
+        test_index=args.test_index,
+        content_ignore=args.content_ignore,
     )
             
     # Add brute force capability if requested
@@ -140,6 +148,7 @@ def main():
         
         # Process URLs
         if args.list:
+            scanner.output_per_url = getattr(args, 'output_per_url', False)
             scanner.process_url_list(args.list)
         else:
             scanner.process_url(args.url)
