@@ -124,7 +124,7 @@ def print_summary(found_count, total_count, use_color=True):
 
 def format_and_print_result(console, result, use_color=True, verbose=False, silent=False, max_size_mb=50):
     """Format and print a result with colors according to HTTP status."""
-    if not result or silent:
+    if not result:
         return
         
     # Get file size in MB (if available)

@@ -189,14 +189,14 @@ class LeftOver:
     
     def process_url(self, target_url: str):
         """Process a URL, testing all extensions on all derived targets."""
-        if not self.silent:
-            if self.use_color:
-                console.rule(f"[bold blue]Target: {target_url}[/bold blue]", style="blue")
-            else:
-                title = f"Target: {target_url}"
-                print("\n" + "-" * len(title))
-                print(title)
-                print("-" * len(title))
+        # Sempre mostrar informações do alvo, mesmo em modo silencioso
+        if self.use_color:
+            console.rule(f"[bold blue]Target: {target_url}[/bold blue]", style="blue")
+        else:
+            title = f"Target: {target_url}"
+            print("\n" + "-" * len(title))
+            print(title)
+            print("-" * len(title))
         
         # Debug: Verificar segmentos da URL antes de processá-la
         if self.verbose:
@@ -221,10 +221,21 @@ class LeftOver:
         # Create a progress bar to display status
         total_tests = len(test_urls) * len(self.extensions)
         
-        # In silent mode, don't display progress bar
-        if self.silent:
+        # Sempre usar barra de progresso, mesmo em modo silencioso
+        progress, task = create_progress_bar(total_tests, self.use_color)
+        with progress:
             # For each base URL, test all extensions
             for base_url, test_type in test_urls:
+                # Sempre mostrar o que está sendo testado, mesmo em modo silencioso
+                if self.use_color:
+                    # Obter as informações corretas para exibição baseadas no tipo de teste
+                    url_display = self._get_display_url(base_url, test_type)
+                    console.print(f"[bold yellow]Testing {test_type}:[/bold yellow] {url_display}")
+                else:
+                    # Versão sem cor com a mesma lógica
+                    url_display = self._get_display_url(base_url, test_type)
+                    print(f"Testing {test_type}: {url_display}")
+                
                 # Use a thread pool to test all extensions in parallel
                 with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
                     future_to_ext = {
@@ -233,42 +244,16 @@ class LeftOver:
                     }
                     
                     for future in concurrent.futures.as_completed(future_to_ext):
+                        progress.update(task, advance=1)
                         result = future.result()
                         if result:
                             format_and_print_result(console, result, self.use_color, self.verbose, self.silent)
-        else:
-            progress, task = create_progress_bar(total_tests, self.use_color)
-            with progress:
-                # For each base URL, test all extensions
-                for base_url, test_type in test_urls:
-                    if not self.silent:
-                        if self.use_color:
-                            # Obter as informações corretas para exibição baseadas no tipo de teste
-                            url_display = self._get_display_url(base_url, test_type)
-                            console.print(f"[bold yellow]Testing {test_type}:[/bold yellow] {url_display}")
-                        else:
-                            # Versão sem cor com a mesma lógica
-                            url_display = self._get_display_url(base_url, test_type)
-                            print(f"Testing {test_type}: {url_display}")
-                    
-                    # Use a thread pool to test all extensions in parallel
-                    with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-                        future_to_ext = {
-                            executor.submit(self.test_url, base_url, ext, test_type): ext 
-                            for ext in self.extensions
-                        }
-                        
-                        for future in concurrent.futures.as_completed(future_to_ext):
-                            progress.update(task, advance=1)
-                            result = future.result()
-                            if result:
-                                format_and_print_result(console, result, self.use_color, self.verbose, self.silent)
-                    
-                    # Add a blank line after each test group
-                    if not self.silent and self.use_color:
-                        console.print()
-                    elif not self.silent:
-                        print()
+                
+                # Add a blank line after each test group
+                if self.use_color:
+                    console.print()
+                else:
+                    print()
     
     def _get_display_url(self, base_url: str, test_type: str) -> str:
         """
@@ -418,19 +403,13 @@ class LeftOver:
         
         total_urls = len(urls)
         
-        if self.silent:
-            # Em modo silencioso, apenas processa as URLs sem exibir progresso
-            for url in urls:
-                self.process_url(url)
-            return
-        
-        # Exibir informações iniciais
+        # Exibir informações iniciais (mesmo em modo silencioso)
         if self.use_color:
             console.print(f"[bold cyan]Processando {total_urls} URLs da lista: {url_list_file}[/bold cyan]")
         else:
             print(f"Processando {total_urls} URLs da lista: {url_list_file}")
         
-        # Usar uma única barra de progresso para todas as URLs
+        # Usar uma única barra de progresso para todas as URLs (mesmo em modo silencioso)
         progress, task_id = create_url_list_progress(total_urls, self.use_color)
         
         with progress:
@@ -470,14 +449,14 @@ class LeftOver:
 
     def _process_url_without_progress(self, target_url: str):
         """Process a URL without using progress bars (for use within URL list processing)."""
-        if not self.silent:
-            if self.use_color:
-                console.rule(f"[bold blue]Target: {target_url}[/bold blue]", style="blue")
-            else:
-                title = f"Target: {target_url}"
-                print("\n" + "-" * len(title))
-                print(title)
-                print("-" * len(title))
+        # Sempre mostrar informações do alvo, mesmo em modo silencioso
+        if self.use_color:
+            console.rule(f"[bold blue]Target: {target_url}[/bold blue]", style="blue")
+        else:
+            title = f"Target: {target_url}"
+            print("\n" + "-" * len(title))
+            print(title)
+            print("-" * len(title))
         
         # Debug: Verificar segmentos da URL antes de processá-la
         if self.verbose:
@@ -501,13 +480,13 @@ class LeftOver:
         
         # Sem barra de progresso, processamos diretamente
         for base_url, test_type in test_urls:
-            if not self.silent:
-                if self.use_color:
-                    url_display = self._get_display_url(base_url, test_type)
-                    console.print(f"[bold yellow]Testing {test_type}:[/bold yellow] {url_display}")
-                else:
-                    url_display = self._get_display_url(base_url, test_type)
-                    print(f"Testing {test_type}: {url_display}")
+            # Sempre mostrar o que está sendo testado, mesmo em modo silencioso
+            if self.use_color:
+                url_display = self._get_display_url(base_url, test_type)
+                console.print(f"[bold yellow]Testing {test_type}:[/bold yellow] {url_display}")
+            else:
+                url_display = self._get_display_url(base_url, test_type)
+                print(f"Testing {test_type}: {url_display}")
             
             # Testar todas as extensões em paralelo
             with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
@@ -521,10 +500,10 @@ class LeftOver:
                     if result:
                         format_and_print_result(console, result, self.use_color, self.verbose, self.silent)
             
-            # Add a blank line after each test group
-            if not self.silent and self.use_color:
+            # Sempre adicionar uma linha em branco após cada grupo de teste
+            if self.use_color:
                 console.print()
-            elif not self.silent:
+            else:
                 print()
 
     def print_summary(self):

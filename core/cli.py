@@ -153,9 +153,8 @@ def main():
         else:
             scanner.process_url(args.url)
         
-        # Display results summary if not in silent mode
-        if not args.silent:
-            scanner.print_summary()
+        # Sempre exibe o resumo dos resultados, mesmo em modo silencioso
+        scanner.print_summary()
         
         # Export results if needed
         if args.output:
