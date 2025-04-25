@@ -14,14 +14,36 @@ from core.config import (
 from core.scanner import LeftOver
 from core.detection import parse_status_codes
 from utils.logger import logger
-from utils.console import console
+from utils.console import console, print_banner, print_info_panel
 from utils.file_utils import load_wordlist, load_url_list, export_results
+
+class ArgumentParserWithBanner(argparse.ArgumentParser):
+    """Custom ArgumentParser that shows the banner before help"""
+    
+    def __init__(self, *args, **kwargs):
+        self.silent_mode = kwargs.pop('silent_mode', False)
+        super().__init__(*args, **kwargs)
+        
+    def print_help(self, file=None):
+        if not self.silent_mode:
+            print_banner(True, False)
+        super().print_help(file)
+        
+    def error(self, message):
+        if not self.silent_mode:
+            print_banner(True, False)
+        self.print_usage(sys.stderr)
+        self.exit(2, f"{self.prog}: error: {message}\n")
 
 def parse_arguments():
     """Parse command line arguments."""
-    parser = argparse.ArgumentParser(
+    # Check for silent mode in args before creating parser
+    silent_mode = '-s' in sys.argv or '--silent' in sys.argv
+    
+    parser = ArgumentParserWithBanner(
         description="LeftOver - Advanced scanner to find residual files on web servers",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        silent_mode=silent_mode
     )
     
     # Target group (mutually exclusive)
@@ -142,9 +164,17 @@ def main():
         args = parse_arguments()
         scanner = configure_scanner_from_args(args)
         
-        # Display banner only if not in silent mode
+        # Restauramos a exibição do banner e do painel de informações para execução normal
         if not args.silent:
-            scanner.print_banner()
+            print_banner(not args.no_color, False)
+            # Exibir painel de informações
+            info_text = f"Version: {VERSION} | Threads: {args.threads}"
+            
+            # Adicionar informação sobre extensões se disponível
+            if hasattr(scanner, 'extensions') and scanner.extensions:
+                info_text += f" | Extensions: {len(scanner.extensions)}"
+                
+            print_info_panel(info_text, not args.no_color)
         
         # Process URLs
         if args.list:

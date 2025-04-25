@@ -47,7 +47,7 @@ DEFAULT_EXTENSIONS = [
     "aspx", "aspx.bak", "aspx.old",
     "rb", "rb~", "rb.bak", "rb.old",
     "py", "py~", "py.bak", "py.old", "py.save",
-    "sh", "sh~", "sh.bak", "sh.old",
+    "sh", "sh~", "sh.bak", "sh.old", "svc", "ash", "ashx"
 
     # ─── Versioning / Patch Artifacts ──────────────────
     "rej", "patch", "diff", "merge",

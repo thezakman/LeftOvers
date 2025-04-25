@@ -230,11 +230,22 @@ class LeftOver:
                 if self.use_color:
                     # Obter as informações corretas para exibição baseadas no tipo de teste
                     url_display = self._get_display_url(base_url, test_type)
-                    console.print(f"[bold yellow]Testing {test_type}:[/bold yellow] {url_display}")
+                    
+                    # Caso especial para Brute Force: mostrar somente "Testing Brute Force: [palavra]" sem o url_display
+                    if test_type.startswith("Brute Force:"):
+                        palavra = test_type.split(": ")[1] if ": " in test_type else ""
+                        console.print(f"[bold yellow]Testing Brute Force:[/bold yellow] {palavra}")
+                    else:
+                        console.print(f"[bold yellow]Testing {test_type}:[/bold yellow] {url_display}")
                 else:
                     # Versão sem cor com a mesma lógica
                     url_display = self._get_display_url(base_url, test_type)
-                    print(f"Testing {test_type}: {url_display}")
+                    
+                    # Caso especial para Brute Force
+                    if test_type.startswith("Brute Force:"):
+                        print(f"Testing {test_type}")
+                    else:
+                        print(f"Testing {test_type}: {url_display}")
                 
                 # Use a thread pool to test all extensions in parallel
                 with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
@@ -345,7 +356,7 @@ class LeftOver:
             parts = hostname.split('.')
             
             # Identificar TLDs compostos comuns
-            tlds_compostos = ['co.uk', 'com.br', 'com.au', 'org.br', 'net.br', 'com.vc', 'edu.br', 'gov.br']
+            tlds_compostos = ['co.uk', 'com.br', 'com.au', 'org.br', 'net.br', 'com.vc']
             
             # Verificar caso especial para domínios com TLDs compostos
             for tld in tlds_compostos:
@@ -366,7 +377,7 @@ class LeftOver:
             return hostname
             
         elif test_type == "Domain Name":
-            # Para Domain Name, mostrar o domínio completo com TLD (sem subdomínio)
+            # Para Domain Name, mostrar o nome de domínio sem TLD
             hostname = parsed.netloc
             # Remover porta se existir
             if ':' in hostname:
@@ -382,18 +393,23 @@ class LeftOver:
                 if hostname.endswith(f".{tld}"):
                     # Se for um domínio com subdomínio e TLD composto: sub.dominio.com.br
                     if len(parts) > 3:
-                        return f"{parts[-3]}.{tld}"  # Retorna 'dominio.com.br'
+                        return parts[-3]  # Retorna 'dominio'
                     # Se for um domínio normal com TLD composto: dominio.com.br
                     else:
-                        return hostname  # Retorna 'dominio.com.br'
+                        return parts[0]  # Retorna 'dominio'
             
             # Para domínios normais não compostos
             if len(parts) >= 3:  # sub.dominio.com
-                return f"{parts[-2]}.{parts[-1]}"  # Retorna 'dominio.com'
+                return parts[-2]  # Retorna 'dominio'
             elif len(parts) == 2:  # dominio.com
-                return hostname  # Retorna 'dominio.com'
+                return parts[0]  # Retorna 'dominio'
             
             return hostname
+            
+        elif test_type.startswith("Brute Force:"):
+            # Para Brute Force, mostrar apenas a palavra-chave que está sendo testada
+            # Extrair a palavra-chave do tipo de teste (formato: "Brute Force: palavra")
+            return test_type.split(": ")[1] if ": " in test_type else ""
     
     def process_url_list(self, url_list_file: str):
         """Process multiple URLs from a file."""
@@ -483,10 +499,22 @@ class LeftOver:
             # Sempre mostrar o que está sendo testado, mesmo em modo silencioso
             if self.use_color:
                 url_display = self._get_display_url(base_url, test_type)
-                console.print(f"[bold yellow]Testing {test_type}:[/bold yellow] {url_display}")
+                
+                # Caso especial para Brute Force: mostrar somente "Testing Brute Force: [palavra]" sem o url_display
+                if test_type.startswith("Brute Force:"):
+                    palavra = test_type.split(": ")[1] if ": " in test_type else ""
+                    console.print(f"[bold yellow]Testing Brute Force:[/bold yellow] {palavra}")
+                else:
+                    console.print(f"[bold yellow]Testing {test_type}:[/bold yellow] {url_display}")
             else:
+                # Versão sem cor com a mesma lógica
                 url_display = self._get_display_url(base_url, test_type)
-                print(f"Testing {test_type}: {url_display}")
+                
+                # Caso especial para Brute Force
+                if test_type.startswith("Brute Force:"):
+                    print(f"Testing {test_type}")
+                else:
+                    print(f"Testing {test_type}: {url_display}")
             
             # Testar todas as extensões em paralelo
             with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
