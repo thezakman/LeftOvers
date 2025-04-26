@@ -64,7 +64,7 @@ def parse_arguments():
     parser.add_argument("-H", "--header", action="append", help="Custom header in format 'Name: Value' (can be used multiple times)")
     parser.add_argument("-c", "--cookie", help="Cookies to include with requests")
     parser.add_argument("-o", "--output", help="File to save results (JSON)")
-    parser.add_argument("--output-per-url", action="store_true", help="Criar um arquivo de saída separado para cada URL (quando usado com --list)")
+    parser.add_argument("--output-per-url", action="store_true", help="Create a separate output file for each URL (when used with --list)")
     parser.add_argument("--test-index", action="store_true", help="Test for index.{extension} on domain URLs")
     
     # Brute force option
@@ -75,7 +75,7 @@ def parse_arguments():
     parser.add_argument("--min-size", type=int, help="Minimum content size in bytes")
     parser.add_argument("--max-size", type=int, help="Maximum content size in bytes")
     parser.add_argument(
-        '-ci', '--content-ignore', 
+        '-ic', '--ignore-content', 
         action='append', 
         default=[], 
         help='Ignore results with specific content types (e.g., "text/html"). Can be used multiple times.'
@@ -146,7 +146,7 @@ def configure_scanner_from_args(args):
         max_content_length=args.max_size,
         rotate_user_agent=args.rotate_agents,
         test_index=args.test_index,
-        content_ignore=args.content_ignore,
+        ignore_content=args.ignore_content,
     )
             
     # Add brute force capability if requested
@@ -164,17 +164,10 @@ def main():
         args = parse_arguments()
         scanner = configure_scanner_from_args(args)
         
-        # Restauramos a exibição do banner e do painel de informações para execução normal
-        if not args.silent:
-            print_banner(not args.no_color, False)
-            # Exibir painel de informações
-            info_text = f"Version: {VERSION} | Threads: {args.threads}"
-            
-            # Adicionar informação sobre extensões se disponível
-            if hasattr(scanner, 'extensions') and scanner.extensions:
-                info_text += f" | Extensions: {len(scanner.extensions)}"
-                
-            print_info_panel(info_text, not args.no_color)
+        # Let the scanner class display the banner and information panel
+        # to ensure that all information, including the word count,
+        # is displayed correctly
+        scanner.print_banner()
         
         # Process URLs
         if args.list:
@@ -183,7 +176,7 @@ def main():
         else:
             scanner.process_url(args.url)
         
-        # Sempre exibe o resumo dos resultados, mesmo em modo silencioso
+        # Always display the summary of results, even in silent mode
         scanner.print_summary()
         
         # Export results if needed

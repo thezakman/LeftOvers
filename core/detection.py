@@ -172,17 +172,17 @@ def perform_sanity_check(http_client: HttpClient, base_url: str, verbose: bool =
     
     responses = []
     
-    # Verifica se é apenas um domínio ou se tem um caminho específico
+    # Check if it's just a domain or if it has a specific path
     is_domain_only = base_url.rstrip('/').count('/') <= 2  # Ex: https://example.com
     
     for random_str in random_exts:
         try:
-            # Construir uma URL válida para o teste de sanidade
+            # Build a valid URL for the sanity test
             if is_domain_only:
-                # Se for só um domínio, adicionamos um caminho randômico
+                # If it's just a domain, we add a random path
                 url = f"{base_url.rstrip('/')}/{random_str}"
             else:
-                # Se já tiver um caminho, adicionamos extensão ao caminho
+                # If it already has a path, we add an extension to the path
                 url = f"{base_url}.{random_str}"
                 
             result = http_client.get(url)

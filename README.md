@@ -1,6 +1,6 @@
 # LeftOvers
 
-**LeftOvers** is an advanced scanner for detecting leftover or residual files on web servers.
+**LeftOvers** is an advanced scanner for detecting residual or "forgotten" files on web servers.
 
 ![LeftOvers Scanner Tool](LeftOver.png)
 
@@ -10,10 +10,10 @@
 # Clone the repository
 git clone https://github.com/yourusername/LeftOvers.git
 
-# Navigate to the directory
+# Navigate to directory
 cd LeftOvers
 
-# Install dependencies (if you have requirements.txt)
+# Install dependencies
 pip install -r requirements.txt
 ```
 
@@ -25,23 +25,26 @@ The project is modularized with the following structure:
 LeftOvers/
 ├── LeftOvers.py        # Main script/entry point
 ├── __init__.py         # Package initialization
-├── __main__.py         # Allows running as a module
+├── __main__.py         # Allows execution as module
 ├── app_settings.py     # Global application settings
 ├── core/               # Core application components
 │   ├── __init__.py
-│   ├── config.py       # Scanner-specific configurations
-│   ├── cli.py          # Command line interface
+│   ├── config.py       # Scanner-specific configuration
+│   ├── cli.py          # Command-line interface
 │   ├── detection.py    # False positive detection
 │   ├── result.py       # Result classes
 │   └── scanner.py      # Main scanner implementation
 └── utils/              # Utilities
     ├── __init__.py
     ├── console.py      # Console and formatting utilities
+    ├── debug_utils.py  # Debugging tools
     ├── file_utils.py   # File operations
+    ├── http_handler.py # HTTP request handler
     ├── http_utils.py   # HTTP client and URL processing
+    ├── logger.py       # Logging configuration
     ├── report.py       # Report generation
-    ├── url_utils.py    # URL manipulation and generation
-    └── logger.py       # Logging configuration
+    ├── url_analyzer.py # URL analysis
+    └── url_utils.py    # URL manipulation and generation
 ```
 
 ## 🚀 Usage
@@ -62,11 +65,14 @@ python LeftOvers.py -l urls.txt
 ### Advanced Features
 
 ```bash
-# Enable brute-force mode with custom wordlist
+# Enable brute force mode with custom wordlist
 python LeftOvers.py -u http://example.com -b --wordlist wordlists/custom.txt
 
 # Export results to JSON file
 python LeftOvers.py -u http://example.com --output results.json
+
+# Create a separate output file for each URL
+python LeftOvers.py -l urls.txt --output-per-url --output results.json
 
 # Specify custom number of threads
 python LeftOvers.py -u http://example.com --threads 20
@@ -75,15 +81,27 @@ python LeftOvers.py -u http://example.com --threads 20
 python LeftOvers.py -u http://example.com --no-ssl-verify
 
 # Ignore results with specific content types
-python LeftOvers.py -u http://example.com -ci text/html -ci image/jpeg
+python LeftOvers.py -u http://example.com -ic text/html --ignore-content image/jpeg
 
 # Filter by status codes (only report 200, 403)
-python LeftOvers.py -u http://example.com -sc 200 -sc 403
+python LeftOvers.py -u http://example.com --status 200,403
 
 # Set custom timeout for requests
 python LeftOvers.py -u http://example.com --timeout 10
 
-# View all available options
+# Add custom HTTP headers
+python LeftOvers.py -u http://example.com -H "X-Custom-Header: Value" -H "Authorization: Bearer token"
+
+# Use a custom User-Agent
+python LeftOvers.py -u http://example.com -a "Mozilla/5.0 MyCustomAgent"
+
+# Randomly rotate User-Agents
+python LeftOvers.py -u http://example.com -ra
+
+# Test index.{extension} on domain URLs
+python LeftOvers.py -u http://example.com --test-index
+
+# See all available options
 python LeftOvers.py --help
 ```
 
@@ -91,45 +109,62 @@ python LeftOvers.py --help
 
 - Python 3.7+
 - Required Python packages:
-  - requests
-  - colorama
-  - tqdm
-  - argparse
+  - requests>=2.27.1
+  - colorama>=0.4.4
+  - rich>=12.0.0
+  - tqdm>=4.62.3
+  - urllib3>=1.26.8
+  - tldextract>=3.1.2
+  - pyOpenSSL>=22.0.0
+  - cryptography>=36.0.0
+  - concurrent-futures-pool>=1.0.0
 
 ## 🔧 Features
 
 - **Intelligent Detection**: Advanced algorithms to filter false positives
 - **Multi-Format Support**: Tests over 120 common file extensions
-- **Brute Force Mode**: Tests directories and files using common keywords
+- **Brute Force Mode**: Test directories and files using common keywords
 - **Efficient Management**:
   - Intelligently detects and handles large files (>10MB)
   - Avoids result duplication
   - Optimized for low resource consumption
-- **Custom Filters**: By status code, content length, and content type
+- **Custom Filters**: By status code, content size, and content type
 - **Rich Interface**: Colored console with progress bars
 - **Report Export**: JSON format for integration with other tools
+- **Custom Headers**: Support for custom HTTP headers
+- **User-Agent Rotation**: Random User-Agent rotation to avoid detection
+- **Per-URL Output**: Option to create separate reports for each analyzed URL
 
 ## 🔍 Configuration
 
-The `app_settings.py` file allows you to customize settings such as:
-- Maximum number of threads
-- Maximum file size to fully analyze
+The `app_settings.py` file allows customizing settings such as:
+- Maximum thread count
+- Maximum file size for full analysis
 - User-Agents for rotation
 - Request timeouts
+- Default keywords for brute force mode
 
 ## ❓ Troubleshooting
 
-**The tool is running too slowly**
-- Try increasing the number of threads with `--threads`
+**Tool is running too slowly**
+- Try increasing thread count with `--threads`
 - Disable SSL verification with `--no-ssl-verify` (only on trusted targets)
+- Reduce timeout with `--timeout`
 
 **Getting too many false positives**
-- Enable intelligent detection with `--smart-detection`
-- Adjust content length filters with `--min-size` and `--max-size`
+- Use content type filters with `-ic`
+- Adjust content size filters with `--min-size` and `--max-size`
+- Use specific status option with `--status`
 
-**The tool crashes with memory errors**
-- Reduce the number of threads
+**Tool crashes with memory errors**
+- Reduce thread count
 - Set a lower value for MAX_FILE_SIZE_MB in app_settings.py
+- Use the `--output-per-url` option when analyzing multiple URLs
+
+**Connection issues**
+- Increase timeout with `--timeout`
+- Check if target is accessible
+- Try using a different User-Agent with `-a`
 
 ## 🤝 Contributions
 

@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 """
-Ferramenta de análise de URL para debugar problemas de segmentação.
+URL analysis tool for debugging segmentation issues.
 """
 
 import sys
 import urllib.parse
 
 def analyze_url(url):
-    """Analisa uma URL e mostra todos os seus componentes."""
-    print(f"\nAnalisando URL: {url}")
+    """Analyzes a URL and shows all its components."""
+    print(f"\nAnalyzing URL: {url}")
     
-    # Parsear a URL
+    # Parse the URL
     parsed = urllib.parse.urlparse(url)
     
-    # Mostrar componentes básicos
-    print("\nComponentes básicos:")
+    # Show basic components
+    print("\nBasic components:")
     print(f"Scheme: {parsed.scheme}")
     print(f"Netloc: {parsed.netloc}")
     print(f"Path: {parsed.path}")
@@ -22,35 +22,35 @@ def analyze_url(url):
     print(f"Query: {parsed.query}")
     print(f"Fragment: {parsed.fragment}")
     
-    # Analisar o netloc (domínio)
-    print("\nAnálise do domínio:")
+    # Analyze the netloc (domain)
+    print("\nDomain analysis:")
     netloc = parsed.netloc
     parts = netloc.split('.')
     
-    print(f"Partes do domínio: {parts}")
+    print(f"Domain parts: {parts}")
     
     if len(parts) >= 3:
-        print(f"Possível subdomínio: {parts[0]}")
-        print(f"Domínio principal: {'.'.join(parts[1:])}")
+        print(f"Possible subdomain: {parts[0]}")
+        print(f"Main domain: {'.'.join(parts[1:])}")
     else:
-        print(f"Domínio sem subdomínio: {netloc}")
+        print(f"Domain without subdomain: {netloc}")
     
-    # Analisar o caminho
-    print("\nAnálise do caminho:")
+    # Analyze the path
+    print("\nPath analysis:")
     path = parsed.path.strip('/')
     
     if not path:
-        print("Caminho vazio")
+        print("Empty path")
     else:
         segments = path.split('/')
-        print(f"Número de segmentos: {len(segments)}")
+        print(f"Number of segments: {len(segments)}")
         
         for i, segment in enumerate(segments, 1):
             print(f"Segment {i}: '{segment}'")
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
-        print("Uso: python url_analyzer.py URL")
+        print("Usage: python url_analyzer.py URL")
         sys.exit(1)
     
     analyze_url(sys.argv[1])

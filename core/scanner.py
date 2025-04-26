@@ -39,7 +39,7 @@ class LeftOver:
                  max_content_length: int = None,
                  rotate_user_agent: bool = False,
                  test_index: bool = False,
-                 content_ignore: List[str] = None):
+                 ignore_content: List[str] = None):
         """Initialize the scanner with the provided settings."""
         self.extensions = extensions or DEFAULT_EXTENSIONS
         self.timeout = timeout
@@ -62,7 +62,7 @@ class LeftOver:
         self.status_filter = status_filter
         self.min_content_length = min_content_length
         self.max_content_length = max_content_length
-        self.content_ignore = content_ignore or []
+        self.ignore_content = ignore_content or []
         
         # Output settings
         self.output_file = output_file
@@ -104,11 +104,11 @@ class LeftOver:
 
         info_text = f"Version: {VERSION} | Threads: {self.max_workers} | Extensions: {len(self.extensions)}"
 
-        # Add brute force info if enabled
-        if self.brute_mode:
-            info_text += f" | Brute Force: Enabled ({len(self.backup_words)} words)"
-
-        print_info_panel(info_text, self.use_color)
+        # Now we'll pass the number of words to the information panel instead
+        # of including it in the text directly
+        backup_words_count = len(self.backup_words) if self.brute_mode else None
+        
+        print_info_panel(info_text, self.use_color, backup_words_count)
     
     def test_url(self, base_url: str, extension: str, test_type: str) -> Optional[ScanResult]:
         """Test a single URL with a given extension."""
@@ -169,7 +169,7 @@ class LeftOver:
                 return None
                 
             # Apply content type filters
-            if any(ignore in scan_result.content_type for ignore in self.content_ignore):
+            if any(ignore in scan_result.content_type for ignore in self.ignore_content):
                 return None
                 
             # Check if this URL has already been found previously
@@ -189,7 +189,7 @@ class LeftOver:
     
     def process_url(self, target_url: str):
         """Process a URL, testing all extensions on all derived targets."""
-        # Sempre mostrar informações do alvo, mesmo em modo silencioso
+        # Always show target information, even in silent mode
         if self.use_color:
             console.rule(f"[bold blue]Target: {target_url}[/bold blue]", style="blue")
         else:
@@ -198,7 +198,7 @@ class LeftOver:
             print(title)
             print("-" * len(title))
         
-        # Debug: Verificar segmentos da URL antes de processá-la
+        # Debug: Check URL segments before processing
         if self.verbose:
             from utils.debug_utils import debug_url_segments
             debug_url_segments(target_url)
@@ -221,29 +221,36 @@ class LeftOver:
         # Create a progress bar to display status
         total_tests = len(test_urls) * len(self.extensions)
         
-        # Sempre usar barra de progresso, mesmo em modo silencioso
+        # Always use progress bar, even in silent mode
         progress, task = create_progress_bar(total_tests, self.use_color)
         with progress:
             # For each base URL, test all extensions
             for base_url, test_type in test_urls:
-                # Sempre mostrar o que está sendo testado, mesmo em modo silencioso
+                # Always show what is being tested, even in silent mode
                 if self.use_color:
-                    # Obter as informações corretas para exibição baseadas no tipo de teste
+                    # Get the correct display information based on test type
                     url_display = self._get_display_url(base_url, test_type)
                     
-                    # Caso especial para Brute Force: mostrar somente "Testing Brute Force: [palavra]" sem o url_display
+                    # Special case for Brute Force: show only "Testing Brute Force: [word]" without url_display
                     if test_type.startswith("Brute Force:"):
-                        palavra = test_type.split(": ")[1] if ": " in test_type else ""
-                        console.print(f"[bold yellow]Testing Brute Force:[/bold yellow] {palavra}")
+                        word = test_type.split(": ")[1] if ": " in test_type else ""
+                        console.print(f"[bold yellow]Testing Brute Force:[/bold yellow] {word}")
+                    # Special case for Brute Force Path: fix display format
+                    elif test_type.startswith("Brute Force Path:"):
+                        word = test_type.split(": ")[1] if ": " in test_type else ""
+                        console.print(f"[bold yellow]Testing Brute Force Path:[/bold yellow] {word}")
                     else:
                         console.print(f"[bold yellow]Testing {test_type}:[/bold yellow] {url_display}")
                 else:
-                    # Versão sem cor com a mesma lógica
+                    # Version without color using same logic
                     url_display = self._get_display_url(base_url, test_type)
                     
-                    # Caso especial para Brute Force
+                    # Special case for Brute Force
                     if test_type.startswith("Brute Force:"):
-                        print(f"Testing {test_type}")
+                        print(f"Testing Brute Force: {test_type.split(': ')[1] if ': ' in test_type else ''}")
+                    # Special case for Brute Force Path
+                    elif test_type.startswith("Brute Force Path:"):
+                        print(f"Testing Brute Force Path: {test_type.split(': ')[1] if ': ' in test_type else ''}")
                     else:
                         print(f"Testing {test_type}: {url_display}")
                 
@@ -268,147 +275,159 @@ class LeftOver:
     
     def _get_display_url(self, base_url: str, test_type: str) -> str:
         """
-        Retorna a representação adequada da URL sendo testada com base no tipo de teste.
+        Returns the appropriate representation of the URL being tested based on the test type.
         """
         parsed = urllib.parse.urlparse(base_url)
         
         if test_type == "Base URL":
-            # Para Base URL, mostrar o domínio completo
+            # For Base URL, show the full domain
             return parsed.netloc
         
         elif test_type == "Full URL":
-            # Para Full URL, mostrar domínio + caminho completo
+            # For Full URL, show domain + full path
             path = parsed.path.strip('/')
             if path:
                 return f"{parsed.netloc}/{path}"
             return parsed.netloc
         
         elif test_type == "Path":
-            # Para Path, mostrar apenas o caminho
+            # For Path, show only the path
             path = parsed.path.strip('/')
             if path:
                 return f"/{path}"
             return "/"
         
         elif test_type.startswith("Segment"):
-            # Extrair o número do segmento do tipo de teste
+            # Extract the segment number from the test type
             try:
                 segment_num = int(test_type.split(' ')[-1])
                 
-                # Extrair o caminho da URL e dividir em segmentos
+                # Extract the path from the URL and split into segments
                 original_path = parsed.path.strip('/')
                 
                 if not original_path:
                     return ""
                 
-                # Verificar o conteúdo do caminho para depuração
+                # Check path content for debugging
                 if self.verbose:
                     print(f"[DEBUG-DISPLAY] URL: {base_url}, Path: {original_path}")
                 
-                # O problema aqui é que estamos obtendo o caminho da URL base, que é
-                # um segmento único (como 'Painel', 'Account' ou 'Login') e não o caminho completo
-                # Vamos obter o caminho original da URL completa
-                
-                # Reconstruir o caminho completo a partir do tipo de segmento
-                # Assumindo que a URL original foi armazenada em algum lugar ou pode ser derivada
-                
-                # A solução mais simples é verificar a última parte do base_url
-                # para identificar qual segmento estamos testando
-                base_path = original_path  # Este é o caminho no base_url (ex: 'Painel')
+                # The simplest solution is to check the last part of the base_url
+                # to identify which segment we're testing
+                base_path = original_path  # This is the path in the base_url (e.g. 'Panel')
                 
                 if self.verbose:
-                    print(f"[DEBUG-DISPLAY] Caminho base: {base_path}")
+                    print(f"[DEBUG-DISPLAY] Base path: {base_path}")
                 
-                # Obter o segmento correto da URL original completa
-                # Para URLs como `/Painel/Account/Login`, quando testamos o Segment 2,
-                # queremos retornar 'Account'
+                # Get the correct segment from the full original URL
+                # For URLs like `/Panel/Account/Login`, when testing Segment 2,
+                # we want to return 'Account'
                 
-                # Neste caso, nosso segmento é simplesmente o próprio caminho base
-                # já que estamos testando um segmento específico por vez
+                # In this case, our segment is simply the base path itself
+                # since we're testing a specific segment at a time
                 return base_path
                 
             except (ValueError, IndexError) as e:
                 if self.verbose:
-                    print(f"[DEBUG-DISPLAY] Erro ao processar segmento: {str(e)}")
+                    print(f"[DEBUG-DISPLAY] Error processing segment: {str(e)}")
                 return ""
         
+        elif test_type.startswith("Path-Subdomain:") or test_type.startswith("Path-Domain-Name:") or test_type.startswith("Path-Domain:"):
+            # Extract the last part of the path containing the tested value
+            path_parts = parsed.path.strip('/').split('/')
+            if path_parts:
+                # The last part of the path will be the value we're testing (subdomain, domain name, or domain)
+                test_value = path_parts[-1]
+                return test_value
+            return ""
+        
         elif test_type == "Subdomain":
-            # Para Subdomain, mostrar apenas o subdomínio
+            # For Subdomain, show only the subdomain
             hostname = parsed.netloc
-            # Remover porta se existir
+            # Remove port if it exists
             if ':' in hostname:
                 hostname = hostname.split(':')[0]
                 
             parts = hostname.split('.')
-            # Se tiver pelo menos 3 partes (subdominio.dominio.tld) ou
-            # se tiver pelo menos 2 partes mas não for um TLD composto (como .com.br)
+            # If it has at least 3 parts (subdomain.domain.tld) or
+            # if it has at least 2 parts but is not a compound TLD (like .com.br)
             if len(parts) >= 3 or (len(parts) == 2 and not any(hostname.endswith(f".{tld}") for tld in ['co.uk', 'com.br', 'com.au', 'org.br', 'net.br', 'com.vc'])):
                 return parts[0]
-            return "[nenhum]"
+            return "[none]"
         
-        elif test_type == "Domain":
-            # Para Domain, mostrar apenas o domínio de segundo nível (sem TLD)
+        elif test_type == "Domain Name":
+            # For Domain Name, show the domain name without TLD
             hostname = parsed.netloc
-            # Remover porta se existir
+            # Remove port if it exists
             if ':' in hostname:
                 hostname = hostname.split(':')[0]
                 
             parts = hostname.split('.')
             
-            # Identificar TLDs compostos comuns
-            tlds_compostos = ['co.uk', 'com.br', 'com.au', 'org.br', 'net.br', 'com.vc']
+            # Identify common compound TLDs
+            compound_tlds = ['co.uk', 'com.br', 'com.au', 'org.br', 'net.br', 'com.vc', 'edu.br', 'gov.br']
             
-            # Verificar caso especial para domínios com TLDs compostos
-            for tld in tlds_compostos:
+            # Check special case for domains with compound TLDs
+            for tld in compound_tlds:
                 if hostname.endswith(f".{tld}"):
-                    # Se for um domínio com subdomínio e TLD composto: sub.dominio.com.br
+                    # If it's a domain with subdomain and compound TLD: sub.domain.com.br
                     if len(parts) > 3:
-                        return parts[-3]  # Retorna 'dominio'
-                    # Se for um domínio normal com TLD composto: dominio.com.br
+                        return parts[-3]  # Returns 'domain'
+                    # If it's a normal domain with compound TLD: domain.com.br
                     else:
-                        return parts[0]  # Retorna 'dominio'
+                        return parts[0]  # Returns 'domain'
             
-            # Para domínios normais não compostos
-            if len(parts) >= 3:  # sub.dominio.com
-                return parts[-2]  # Retorna 'dominio'
-            elif len(parts) == 2:  # dominio.com
-                return parts[0]  # Retorna 'dominio'
+            # For normal non-compound domains
+            if len(parts) >= 3:  # sub.domain.com
+                return parts[-2]  # Returns 'domain'
+            elif len(parts) == 2:  # domain.com
+                return parts[0]  # Returns 'domain'
             
             return hostname
             
-        elif test_type == "Domain Name":
-            # Para Domain Name, mostrar o nome de domínio sem TLD
+        elif test_type == "Domain":
+            # For Domain, show the full domain including TLD (without subdomain)
             hostname = parsed.netloc
-            # Remover porta se existir
+            # Remove port if it exists
             if ':' in hostname:
                 hostname = hostname.split(':')[0]
                 
             parts = hostname.split('.')
             
-            # Identificar TLDs compostos comuns
-            tlds_compostos = ['co.uk', 'com.br', 'com.au', 'org.br', 'net.br', 'com.vc', 'edu.br', 'gov.br']
+            # Identify common compound TLDs
+            compound_tlds = [
+                    "co.uk", "com.br", "com.au", "org.br", "net.br",
+                    "com.vc", "edu.br", "gov.br", "gov.uk", "gov.au",
+                    "gov.za", "edu.au", "edu.uk", "ac.uk", "org.uk",
+                    "net.uk", "com.mx", "com.ar", "com.co", "com.pe",
+                    "com.cl", "com.ec", "com.bo", "com.uy", "com.pa",
+                    "org.mx", "org.ar", "org.co", "org.pe", "org.cl",
+                    "org.ec", "org.bo", "org.uy", "org.pa", "gov.mx",
+                    "gov.ar", "gov.co", "gov.pe", "gov.cl", "gov.ec",
+                    "gov.bo", "gov.uy", "gov.pa"
+            ]
             
-            # Verificar caso especial para domínios com TLDs compostos
-            for tld in tlds_compostos:
+            # Check special case for domains with compound TLDs
+            for tld in compound_tlds:
                 if hostname.endswith(f".{tld}"):
-                    # Se for um domínio com subdomínio e TLD composto: sub.dominio.com.br
+                    # If it's a domain with subdomain and compound TLD: sub.domain.com.br
                     if len(parts) > 3:
-                        return parts[-3]  # Retorna 'dominio'
-                    # Se for um domínio normal com TLD composto: dominio.com.br
+                        return f"{parts[-3]}.{tld}"  # Returns 'domain.com.br'
+                    # If it's a normal domain with compound TLD: domain.com.br
                     else:
-                        return parts[0]  # Retorna 'dominio'
+                        return hostname  # Returns 'domain.com.br'
             
-            # Para domínios normais não compostos
-            if len(parts) >= 3:  # sub.dominio.com
-                return parts[-2]  # Retorna 'dominio'
-            elif len(parts) == 2:  # dominio.com
-                return parts[0]  # Retorna 'dominio'
+            # For normal non-compound domains
+            if len(parts) >= 3:  # sub.domain.com
+                return f"{parts[-2]}.{parts[-1]}"  # Returns 'domain.com'
+            elif len(parts) == 2:  # domain.com
+                return hostname  # Returns 'domain.com'
             
             return hostname
             
         elif test_type.startswith("Brute Force:"):
-            # Para Brute Force, mostrar apenas a palavra-chave que está sendo testada
-            # Extrair a palavra-chave do tipo de teste (formato: "Brute Force: palavra")
+            # For Brute Force, show only the keyword being tested
+            # Extract the keyword from the test type (format: "Brute Force: word")
             return test_type.split(": ")[1] if ": " in test_type else ""
     
     def process_url_list(self, url_list_file: str):
@@ -419,33 +438,33 @@ class LeftOver:
         
         total_urls = len(urls)
         
-        # Exibir informações iniciais (mesmo em modo silencioso)
+        # Display initial information (even in silent mode)
         if self.use_color:
-            console.print(f"[bold cyan]Processando {total_urls} URLs da lista: {url_list_file}[/bold cyan]")
+            console.print(f"[bold cyan]Processing {total_urls} URLs from list: {url_list_file}[/bold cyan]")
         else:
-            print(f"Processando {total_urls} URLs da lista: {url_list_file}")
+            print(f"Processing {total_urls} URLs from list: {url_list_file}")
         
-        # Usar uma única barra de progresso para todas as URLs (mesmo em modo silencioso)
+        # Use a single progress bar for all URLs (even in silent mode)
         progress, task_id = create_url_list_progress(total_urls, self.use_color)
         
         with progress:
             for i, url in enumerate(urls, 1):
-                # Atualizar descrição da barra de progresso com URL atual
+                # Update progress bar description with current URL
                 progress.update(task_id, description=f"[cyan]URL {i}/{total_urls}: {url}")
                 
-                # Limpar resultados anteriores se estivermos gerando um arquivo por URL
+                # Clear previous results if we're generating a file per URL
                 if self.output_per_url:
                     self.results = []
                 
-                # Processar a URL atual (com display desativado para evitar conflito)
+                # Process the current URL (with display deactivated to avoid conflict)
                 self._process_url_without_progress(url)
                 
-                # Exportar resultados para esta URL específica se necessário
+                # Export results for this specific URL if needed
                 if self.output_per_url and self.output_file:
                     from urllib.parse import urlparse
                     from utils.file_utils import export_results
                     
-                    # Criar nome de arquivo baseado na URL
+                    # Create filename based on URL
                     parsed = urlparse(url)
                     domain = parsed.netloc.replace(':', '_')
                     path = parsed.path.replace('/', '_').strip('_')
@@ -458,14 +477,14 @@ class LeftOver:
                     export_results(self.results, filename)
                     
                     if not self.silent:
-                        logger.info(f"Resultados para {url} exportados para {filename}")
+                        logger.info(f"Results for {url} exported to {filename}")
                 
-                # Avançar a barra de progresso
+                # Advance the progress bar
                 progress.update(task_id, advance=1)
 
     def _process_url_without_progress(self, target_url: str):
         """Process a URL without using progress bars (for use within URL list processing)."""
-        # Sempre mostrar informações do alvo, mesmo em modo silencioso
+        # Always show target information, even in silent mode
         if self.use_color:
             console.rule(f"[bold blue]Target: {target_url}[/bold blue]", style="blue")
         else:
@@ -474,7 +493,7 @@ class LeftOver:
             print(title)
             print("-" * len(title))
         
-        # Debug: Verificar segmentos da URL antes de processá-la
+        # Debug: Check URL segments before processing
         if self.verbose:
             from utils.debug_utils import debug_url_segments
             debug_url_segments(target_url)
@@ -494,29 +513,36 @@ class LeftOver:
         if not test_urls:
             return
         
-        # Sem barra de progresso, processamos diretamente
+        # Without progress bar, we process directly
         for base_url, test_type in test_urls:
-            # Sempre mostrar o que está sendo testado, mesmo em modo silencioso
+            # Always show what is being tested, even in silent mode
             if self.use_color:
                 url_display = self._get_display_url(base_url, test_type)
                 
-                # Caso especial para Brute Force: mostrar somente "Testing Brute Force: [palavra]" sem o url_display
+                # Special case for Brute Force: show only "Testing Brute Force: [word]" without url_display
                 if test_type.startswith("Brute Force:"):
-                    palavra = test_type.split(": ")[1] if ": " in test_type else ""
-                    console.print(f"[bold yellow]Testing Brute Force:[/bold yellow] {palavra}")
+                    word = test_type.split(": ")[1] if ": " in test_type else ""
+                    console.print(f"[bold yellow]Testing Brute Force:[/bold yellow] {word}")
+                # Special case for Brute Force Path: fix display format
+                elif test_type.startswith("Brute Force Path:"):
+                    word = test_type.split(": ")[1] if ": " in test_type else ""
+                    console.print(f"[bold yellow]Testing Brute Force Path:[/bold yellow] {word}")
                 else:
                     console.print(f"[bold yellow]Testing {test_type}:[/bold yellow] {url_display}")
             else:
-                # Versão sem cor com a mesma lógica
+                # Version without color using the same logic
                 url_display = self._get_display_url(base_url, test_type)
                 
-                # Caso especial para Brute Force
+                # Special case for Brute Force
                 if test_type.startswith("Brute Force:"):
-                    print(f"Testing {test_type}")
+                    print(f"Testing Brute Force: {test_type.split(': ')[1] if ': ' in test_type else ''}")
+                # Special case for Brute Force Path
+                elif test_type.startswith("Brute Force Path:"):
+                    print(f"Testing Brute Force Path: {test_type.split(': ')[1] if ': ' in test_type else ''}")
                 else:
                     print(f"Testing {test_type}: {url_display}")
             
-            # Testar todas as extensões em paralelo
+            # Test all extensions in parallel
             with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
                 future_to_ext = {
                     executor.submit(self.test_url, base_url, ext, test_type): ext 
@@ -528,7 +554,7 @@ class LeftOver:
                     if result:
                         format_and_print_result(console, result, self.use_color, self.verbose, self.silent)
             
-            # Sempre adicionar uma linha em branco após cada grupo de teste
+            # Always add a blank line after each test group
             if self.use_color:
                 console.print()
             else:

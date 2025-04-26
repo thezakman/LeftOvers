@@ -20,7 +20,7 @@ def print_banner(use_color=True, silent=False):
 
     banner_text = r"""
     ___/-\___   _           __ _    ____                     
-   |---------| | |         / _| |  / __ \                    
+   |---------| | |         / _| |  / __ \                       
     | | | | |  | |     ___| |_| |_| |  | |_   _____ _ __ ___ 
     | | | | |  | |    / _ \  _| __| |  | \ \ / / _ \ '__/ __| 
     | | | | |  | |___|  __/ | | |_| |__| |\ V /  __/ |  \__ \ 
@@ -31,13 +31,18 @@ def print_banner(use_color=True, silent=False):
     else:
         print(banner_text)
 
-def print_info_panel(text: str, use_color: bool = True):
+def print_info_panel(text: str, use_color: bool = True, backup_words_count: int = None):
     """Print an info panel with the given text."""
+    # Adicionar informação sobre backup words se disponível
+    full_text = text
+    if backup_words_count is not None and backup_words_count > 0:
+        full_text += f" | Words: {backup_words_count}"
+        
     if use_color:
-        console.print(Panel(text, title="Scanner Info", border_style="cyan", expand=False))
+        console.print(Panel(full_text, title="Scanner Info", border_style="cyan", expand=False))
     else:
         print("\n" + "=" * 50)
-        print(f" {text}")
+        print(f" {full_text}")
         print("=" * 50 + "\n")
 
 def print_large_file_warning(max_size_mb, use_color=True):
