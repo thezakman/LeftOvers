@@ -3,8 +3,14 @@ Scanner-specific configurations and constants for the LeftOvers scanner.
 """
 
 # Import global settings
-from app_settings import VERSION, DEFAULT_TIMEOUT, DEFAULT_THREADS, MAX_FILE_SIZE_MB, DEFAULT_USER_AGENT, USER_AGENTS
-
+from app_settings import (
+    VERSION, 
+    DEFAULT_TIMEOUT, 
+    DEFAULT_THREADS, 
+    MAX_FILE_SIZE_MB,
+    USER_AGENTS, 
+    DEFAULT_USER_AGENT
+)
 # Default headers for HTTP requests
 DEFAULT_HEADERS = {
     "User-Agent": DEFAULT_USER_AGENT,
@@ -15,32 +21,37 @@ DEFAULT_HEADERS = {
     "Cache-Control": "no-cache",
 }
 
-# Default list of extensions to test
-DEFAULT_EXTENSIONS = [
-    # ─── Text / Config / Data ─────────────────────────
+# Organized extensions by categories
+TEXT_CONFIG_EXTENSIONS = [
     "txt", "log", "log1", "json", "xml", "yaml", "yml", "csv",
     "properties", "plist", "config", "cfg", "ini", "conf", "env", "settings",
     "lock", "tmpfile", "test", "sample",
+]
 
-    # ─── Databases ─────────────────────────────────────
+DATABASE_EXTENSIONS = [
     "sql", "db", "sqlite", "sqlite3", "mdb", "accdb", "dump",
+]
 
-    # ─── Common Backups ────────────────────────────────
+BACKUP_EXTENSIONS = [
     "bak", "bak1", "old", "backup", "bkp", "copy", "copy1", "copy2",
     "save", "orig", "temp", "tmp", "dist", "new", "~",
+]
 
-    # ─── Archives / Compression ────────────────────────
+ARCHIVE_EXTENSIONS = [
     "zip", "tar", "tgz", "gz", "gzip", "bz2", "xz", "7z", "rar",
     "tar.gz", "tar.bz2",
+]
 
-    # ─── IDE / Editor Leftovers ────────────────────────
+IDE_LEFTOVER_EXTENSIONS = [
     "swp", "swo", "swn", "tmp~", "tmp.swp", "tmp.save", "sml", "autosave", "kate-swp",
+]
 
-    # ─── Web Files / Mapping ───────────────────────────
+WEB_EXTENSIONS = [
     "html", "htm", "js", "js.map", "json.map", "xml.map",
     "css", "scss", "sass", "map",
+]
 
-    # ─── Code / Web App Langs (w/ backup variants) ─────
+CODE_EXTENSIONS = [
     "php", "php~", "php.bak", "php.old", "php.save",
     "jsp", "jsp~", "jsp.bak", "jsp.old", "jsp.save",
     "asp", "asp~", "asp.bak", "asp.old", "asp.save",
@@ -48,21 +59,39 @@ DEFAULT_EXTENSIONS = [
     "rb", "rb~", "rb.bak", "rb.old",
     "py", "py~", "py.bak", "py.old", "py.save",
     "sh", "sh~", "sh.bak", "sh.old", "svc", "ash", "ashx"
+]
 
-    # ─── Versioning / Patch Artifacts ──────────────────
+VERSION_CONTROL_EXTENSIONS = [
     "rej", "patch", "diff", "merge",
+]
 
-    # ─── Document / Office Formats ─────────────────────
+DOCUMENT_EXTENSIONS = [
     "doc", "docx", "xls", "xlsx", "ppt", "pptx", "pdf",
     "rtf", "md", "odt", "ods", "odp",
+]
 
-    # ─── Misc Executables / Images / Etc ───────────────
+MISC_EXTENSIONS = [
     "exe.bak", "dll.bak", "bin.bak", "img", "iso"
 ]
 
-# Default list of common backup words/directories to test
-DEFAULT_BACKUP_WORDS = [
-    # ─── Backup Directories and Names ───────────────────
+# Create the final DEFAULT_EXTENSIONS list from all categories
+DEFAULT_EXTENSIONS = [
+    *TEXT_CONFIG_EXTENSIONS,
+    *DATABASE_EXTENSIONS,
+    *BACKUP_EXTENSIONS,
+    *ARCHIVE_EXTENSIONS,
+    *IDE_LEFTOVER_EXTENSIONS,
+    *WEB_EXTENSIONS,
+    *CODE_EXTENSIONS,
+    *VERSION_CONTROL_EXTENSIONS,
+    *DOCUMENT_EXTENSIONS,
+    *MISC_EXTENSIONS,
+]
+
+# ─── Default list of common backup words/directories to test ───────────────────
+
+# Organize backup words by categories
+BACKUP_DIRECTORY_WORDS = [
     "anterior", "antigo", "archive", "archived", "archives", "atual",
     "back", "backup", "bkp", "copia", "copy", "deletar", "dev",
     "devel", "development", "guardar", "hml", "historical", "history",
@@ -71,24 +100,28 @@ DEFAULT_BACKUP_WORDS = [
     "prod", "production", "rascunho", "release", "reserva", "salvo",
     "seguranca", "stable", "staging", "temp", "temporario", "tmp",
     "versao", "producao",
+]
 
-    # ─── Web Related ────────────────────────────────────
+WEB_RELATED_WORDS = [
     "backend", "conteudo", "deploy", "frontend", "htdocs", "html",
     "httpdocs", "inetpub", "pagina", "portal", "public", "public_html",
     "publicacao", "site", "sistema", "static", "web", "webpage",
     "webroot", "website", "www", "www-data", "hospedagem",
+]
 
-    # ─── Version Control ─────────────────────────────────
+VERSION_CONTROL_WORDS = [
     ".git", ".svn", "bk", "cvs", "git", "hg", "svn",
+]
 
-    # ─── Dates and Versions ──────────────────────────────
+DATE_VERSION_WORDS = [
     "1.0", "2.0", "2020", "2021", "2022", "2023", "2024", "2025",
     "apr", "aug", "dec", "feb", "jan", "jul", "jun", "mar",
     "may", "nov", "oct", "sep", "v1", "v2", "v3",
     "abril", "agosto", "dezembro", "fevereiro", "janeiro", "julho",
     "junho", "maio", "marco", "novembro", "outubro", "setembro",
+]
 
-    # ─── Brazilian Portuguese Common Terms ────────────────
+PTBR_COMMON_WORDS = [
     "acesso", "ajuda", "api", "aplicacao", "aplicativo", "aprovado",
     "configuracao", "dados", "desenvolvedor", "documentacao",
     "emergencia", "importante", "informacao", "interno",
@@ -96,8 +129,9 @@ DEFAULT_BACKUP_WORDS = [
     "recuperacao", "restrito", "secreto", "segredo", "senha",
     "servico", "servidor", "suporte", "teste", "usuario",
     "webservice", "webservices", "revisado",
+]
 
-    # ─── Business/Financial PT-BR Terms ──────────────────
+PTBR_BUSINESS_WORDS = [
     "admin", "administrativo", "balanco", "boleto", "cadastro",
     "carteira", "cliente", "cobranca", "comercial", "compra",
     "contabil", "contabilidade", "credito", "debito", "despesa",
@@ -107,8 +141,9 @@ DEFAULT_BACKUP_WORDS = [
     "pagamento", "pesquisa", "prejuizo", "produto", "receber",
     "receita", "registro", "relatorio", "relatorios", "resultado",
     "transacao", "venda", "vendas",
+]
 
-    # ─── Corporate PT-BR Terms ───────────────────────────
+PTBR_CORPORATE_WORDS = [
     "acao", "acoes", "atividade", "atividades", "associacao",
     "auditoria", "candidato", "cnpj", "comite", "compliance",
     "conselho", "concurso", "conta", "contrato", "contratacao",
@@ -122,16 +157,31 @@ DEFAULT_BACKUP_WORDS = [
     "prefeitura", "processo", "programa", "programas", "propostas",
     "proposta", "protocolo", "regulamento", "regulamentacao", "resolucao",
     "rg", "sede", "secretaria", "sociedade", "unidade",
+]
 
-    # ─── Technical PT-BR Terms ───────────────────────────
+PTBR_TECHNICAL_WORDS = [
     "anexo", "autenticacao", "caixa", "certificado", "correio",
     "criptografia", "digitalizar", "download", "email", "entrada",
     "enviado", "extranet", "fila", "firewall", "impressao",
     "impressora", "intranet", "mensagem", "proxy", "rede", "saida",
     "scanner", "token", "upload", "vpn",
+]
 
-    # ─── Database/Config Terms ────────────────────────────
+DATABASE_CONFIG_WORDS = [
     "config", "conf", "data", "database", "db", "dist", "dump",
     "exportacao", "hidden", "importacao", "install", "internal",
     "modelo", "padrao", "private", "secret", "settings", "setup"
+]
+
+# Create the final DEFAULT_BACKUP_WORDS list from all categories
+DEFAULT_BACKUP_WORDS = [
+    *BACKUP_DIRECTORY_WORDS,
+    *WEB_RELATED_WORDS,
+    *VERSION_CONTROL_WORDS,
+    *DATE_VERSION_WORDS,
+    *PTBR_COMMON_WORDS,
+    *PTBR_BUSINESS_WORDS,
+    *PTBR_CORPORATE_WORDS,
+    *PTBR_TECHNICAL_WORDS,
+    *DATABASE_CONFIG_WORDS,
 ]
