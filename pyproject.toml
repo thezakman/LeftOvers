@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "LeftOvers"
+version = "0.1.0"
+description = "Um scanner avançado para encontrar arquivos residuais em servidores web"
+readme = "README.md"
+authors = [
+    {name = "thezakman"}
+]
+requires-python = ">=3.6"
+dependencies = [
+    "requests>=2.27.1",
+    "colorama>=0.4.4",
+    "rich>=12.0.0",
+    "tqdm>=4.62.3",
+    "urllib3>=1.26.8",
+    "tldextract>=3.1.2",
+    "pyOpenSSL>=22.0.0",
+    "cryptography>=36.0.0",
+    "concurrent-futures-pool>=1.0.0",
+]
+
+[project.scripts]
+leftovers = "LeftOvers:main"
+
+[project.urls]
+"Homepage" = "https://github.com/thezakman/LeftOvers"
+"Bug Tracker" = "https://github.com/thezakman/LeftOvers/issues"
