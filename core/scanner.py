@@ -56,6 +56,7 @@ class LeftOver:
         
         # Brute force settings (default empty, set by CLI)
         self.brute_mode = False
+        self.brute_recursive = False
         self.backup_words = []
         
         # Filters
@@ -148,6 +149,14 @@ class LeftOver:
                 extension=extension
             )
             
+            # Check if content type is in the IGNORE_CONTENT list
+            if scan_result.check_ignored_content_type():
+                return None
+                
+            # Check if content type is in the list of types ignored by -ic parameter
+            if any(ignore in scan_result.content_type for ignore in self.ignore_content):
+                return None
+            
             # Check for false positives
             is_false_positive, reason = check_false_positive(
                 scan_result, 
@@ -166,10 +175,6 @@ class LeftOver:
             # Apply content length filters
             if (self.min_content_length is not None and scan_result.content_length < self.min_content_length) or \
                (self.max_content_length is not None and scan_result.content_length > self.max_content_length):
-                return None
-                
-            # Apply content type filters
-            if any(ignore in scan_result.content_type for ignore in self.ignore_content):
                 return None
                 
             # Check if this URL has already been found previously
@@ -212,7 +217,8 @@ class LeftOver:
             target_url,
             self.brute_mode, 
             self.backup_words,
-            self.verbose
+            self.verbose,
+            self.brute_recursive
         )
         
         if not test_urls:
@@ -234,11 +240,75 @@ class LeftOver:
                     # Special case for Brute Force: show only "Testing Brute Force: [word]" without url_display
                     if test_type.startswith("Brute Force:"):
                         word = test_type.split(": ")[1] if ": " in test_type else ""
-                        console.print(f"[bold yellow]Testing Brute Force:[/bold yellow] {word}")
+                        parsed = urllib.parse.urlparse(base_url)
+                        path = parsed.path.strip('/')
+                        if path:
+                            console.print(f"[bold yellow]Testing Brute Force:[/bold yellow] {word} [bold cyan](at /{path})[/bold cyan]")
+                        else:
+                            console.print(f"[bold yellow]Testing Brute Force:[/bold yellow] {word} [bold cyan](at root)[/bold cyan]")
+                        
+                        # Debug if verbose is enabled
+                        if self.verbose:
+                            from utils.debug_utils import debug_brute_force_path
+                            debug_brute_force_path(f"{base_url}/{word}", test_type)
                     # Special case for Brute Force Path: fix display format
                     elif test_type.startswith("Brute Force Path:"):
                         word = test_type.split(": ")[1] if ": " in test_type else ""
-                        console.print(f"[bold yellow]Testing Brute Force Path:[/bold yellow] {word}")
+                        parsed = urllib.parse.urlparse(base_url)
+                        path = parsed.path.strip('/')
+                        if path:
+                            console.print(f"[bold yellow]Testing Brute Force Path:[/bold yellow] {word} [bold cyan](at /{path})[/bold cyan]")
+                        else:
+                            console.print(f"[bold yellow]Testing Brute Force Path:[/bold yellow] {word} [bold cyan](at root)[/bold cyan]")
+                        
+                        # Debug if verbose is enabled
+                        if self.verbose:
+                            from utils.debug_utils import debug_brute_force_path
+                            debug_brute_force_path(f"{base_url}/{word}", test_type)
+                    # Special case for Brute Force Recursive: show path info
+                    elif test_type.startswith("Brute Force Recursive:"):
+                        word = test_type.split(": ")[1] if ": " in test_type else ""
+                        parsed = urllib.parse.urlparse(base_url)
+                        path = parsed.path.strip('/')
+                        # Get the directory part of the path (remove last segment which is our test word)
+                        path_without_word = '/'.join(path.split('/')[:-1])
+                        if path_without_word:
+                            console.print(f"[bold yellow]Testing Brute Force Recursive:[/bold yellow] {word} [bold cyan](at /{path_without_word})[/bold cyan]")
+                        else:
+                            console.print(f"[bold yellow]Testing Brute Force Recursive:[/bold yellow] {word} [bold cyan](at root)[/bold cyan]")
+                        
+                        # Debug if verbose is enabled
+                        if self.verbose:
+                            from utils.debug_utils import debug_brute_force_path
+                            debug_brute_force_path(f"{base_url}/{word}", test_type)
+                    # Special cases for new test types Path-Individual:
+                    elif test_type.startswith("Path-Individual:"):
+                        path_component = test_type.split(": ")[1] if ": " in test_type else ""
+                        console.print(f"[bold yellow]Testing Path-Individual:[/bold yellow] {path_component}")
+                    # Special cases for Path-Current-Path:
+                    elif test_type.startswith("Path-Current-Path:"):
+                        path_component = test_type.split(": ")[1] if ": " in test_type else ""
+                        console.print(f"[bold yellow]Testing Path-Current-Path:[/bold yellow] {path_component}")
+                    elif test_type == "Path-Current-Subdomain":
+                        # Extract parent path to show context
+                        parsed = urllib.parse.urlparse(base_url)
+                        parent_path = '/'.join(parsed.path.strip('/').split('/')[:-1])
+                        console.print(f"[bold yellow]Testing Path-Current-Subdomain[/bold yellow] [bold cyan](/{parent_path}):[/bold cyan] {url_display}")
+                    elif test_type == "Path-Current-Domain-Name":
+                        # Extract parent path to show context
+                        parsed = urllib.parse.urlparse(base_url)
+                        parent_path = '/'.join(parsed.path.strip('/').split('/')[:-1])
+                        console.print(f"[bold yellow]Testing Path-Current-Domain-Name[/bold yellow] [bold cyan](/{parent_path}):[/bold cyan] {url_display}")
+                    elif test_type == "Path-Current-Domain":
+                        # Extract parent path to show context
+                        parsed = urllib.parse.urlparse(base_url)
+                        parent_path = '/'.join(parsed.path.strip('/').split('/')[:-1])
+                        console.print(f"[bold yellow]Testing Path-Current-Domain[/bold yellow] [bold cyan](/{parent_path}):[/bold cyan] {url_display}")
+                    elif test_type == "Path-Current-Hostname":
+                        # Extract parent path to show context
+                        parsed = urllib.parse.urlparse(base_url)
+                        parent_path = '/'.join(parsed.path.strip('/').split('/')[:-1])
+                        console.print(f"[bold yellow]Testing Path-Current-Hostname[/bold yellow] [bold cyan](/{parent_path}):[/bold cyan] {url_display}")
                     else:
                         console.print(f"[bold yellow]Testing {test_type}:[/bold yellow] {url_display}")
                 else:
@@ -247,10 +317,76 @@ class LeftOver:
                     
                     # Special case for Brute Force
                     if test_type.startswith("Brute Force:"):
-                        print(f"Testing Brute Force: {test_type.split(': ')[1] if ': ' in test_type else ''}")
+                        word = test_type.split(": ")[1] if ": " in test_type else ""
+                        parsed = urllib.parse.urlparse(base_url)
+                        path = parsed.path.strip('/')
+                        if path:
+                            print(f"Testing Brute Force: {word} (at /{path})")
+                        else:
+                            print(f"Testing Brute Force: {word} (at root)")
+                        
+                        # Debug if verbose is enabled
+                        if self.verbose:
+                            from utils.debug_utils import debug_brute_force_path
+                            debug_brute_force_path(f"{base_url}/{word}", test_type)
                     # Special case for Brute Force Path
                     elif test_type.startswith("Brute Force Path:"):
-                        print(f"Testing Brute Force Path: {test_type.split(': ')[1] if ': ' in test_type else ''}")
+                        word = test_type.split(": ")[1] if ": " in test_type else ""
+                        parsed = urllib.parse.urlparse(base_url)
+                        path = parsed.path.strip('/')
+                        if path:
+                            print(f"Testing Brute Force Path: {word} (at /{path})")
+                        else:
+                            print(f"Testing Brute Force Path: {word} (at root)")
+                        
+                        # Debug if verbose is enabled
+                        if self.verbose:
+                            from utils.debug_utils import debug_brute_force_path
+                            debug_brute_force_path(f"{base_url}/{word}", test_type)
+                    # Special case for Brute Force Recursive: show path info
+                    elif test_type.startswith("Brute Force Recursive:"):
+                        word = test_type.split(": ")[1] if ": " in test_type else ""
+                        parsed = urllib.parse.urlparse(base_url)
+                        path = parsed.path.strip('/')
+                        # Get the directory part of the path (remove last segment which is our test word)
+                        path_without_word = '/'.join(path.split('/')[:-1])
+                        if path_without_word:
+                            print(f"Testing Brute Force Recursive: {word} (/{path_without_word})")
+                        else:
+                            print(f"Testing Brute Force Recursive: {word} (/)")
+                        
+                        # Debug if verbose is enabled
+                        if self.verbose:
+                            from utils.debug_utils import debug_brute_force_path
+                            debug_brute_force_path(f"{base_url}/{word}", test_type)
+                    # Special cases for new test types Path-Individual:
+                    elif test_type.startswith("Path-Individual:"):
+                        path_component = test_type.split(": ")[1] if ": " in test_type else ""
+                        print(f"Testing Path-Individual: {path_component}")
+                    # Special cases for Path-Current-Path:
+                    elif test_type.startswith("Path-Current-Path:"):
+                        path_component = test_type.split(": ")[1] if ": " in test_type else ""
+                        print(f"Testing Path-Current-Path: {path_component}")
+                    elif test_type == "Path-Current-Subdomain":
+                        # Extract parent path to show context
+                        parsed = urllib.parse.urlparse(base_url)
+                        parent_path = '/'.join(parsed.path.strip('/').split('/')[:-1])
+                        print(f"Testing Path-Current-Subdomain (/{parent_path}): {url_display}")
+                    elif test_type == "Path-Current-Domain-Name":
+                        # Extract parent path to show context
+                        parsed = urllib.parse.urlparse(base_url)
+                        parent_path = '/'.join(parsed.path.strip('/').split('/')[:-1])
+                        print(f"Testing Path-Current-Domain-Name (/{parent_path}): {url_display}")
+                    elif test_type == "Path-Current-Domain":
+                        # Extract parent path to show context
+                        parsed = urllib.parse.urlparse(base_url)
+                        parent_path = '/'.join(parsed.path.strip('/').split('/')[:-1])
+                        print(f"Testing Path-Current-Domain (/{parent_path}): {url_display}")
+                    elif test_type == "Path-Current-Hostname":
+                        # Extract parent path to show context
+                        parsed = urllib.parse.urlparse(base_url)
+                        parent_path = '/'.join(parsed.path.strip('/').split('/')[:-1])
+                        print(f"Testing Path-Current-Hostname (/{parent_path}): {url_display}")
                     else:
                         print(f"Testing {test_type}: {url_display}")
                 
@@ -272,164 +408,7 @@ class LeftOver:
                     console.print()
                 else:
                     print()
-    
-    def _get_display_url(self, base_url: str, test_type: str) -> str:
-        """
-        Returns the appropriate representation of the URL being tested based on the test type.
-        """
-        parsed = urllib.parse.urlparse(base_url)
-        
-        if test_type == "Base URL":
-            # For Base URL, show the full domain
-            return parsed.netloc
-        
-        elif test_type == "Full URL":
-            # For Full URL, show domain + full path
-            path = parsed.path.strip('/')
-            if path:
-                return f"{parsed.netloc}/{path}"
-            return parsed.netloc
-        
-        elif test_type == "Path":
-            # For Path, show only the path
-            path = parsed.path.strip('/')
-            if path:
-                return f"/{path}"
-            return "/"
-        
-        elif test_type.startswith("Segment"):
-            # Extract the segment number from the test type
-            try:
-                segment_num = int(test_type.split(' ')[-1])
-                
-                # Extract the path from the URL and split into segments
-                original_path = parsed.path.strip('/')
-                
-                if not original_path:
-                    return ""
-                
-                # Check path content for debugging
-                if self.verbose:
-                    print(f"[DEBUG-DISPLAY] URL: {base_url}, Path: {original_path}")
-                
-                # The simplest solution is to check the last part of the base_url
-                # to identify which segment we're testing
-                base_path = original_path  # This is the path in the base_url (e.g. 'Panel')
-                
-                if self.verbose:
-                    print(f"[DEBUG-DISPLAY] Base path: {base_path}")
-                
-                # Get the correct segment from the full original URL
-                # For URLs like `/Panel/Account/Login`, when testing Segment 2,
-                # we want to return 'Account'
-                
-                # In this case, our segment is simply the base path itself
-                # since we're testing a specific segment at a time
-                return base_path
-                
-            except (ValueError, IndexError) as e:
-                if self.verbose:
-                    print(f"[DEBUG-DISPLAY] Error processing segment: {str(e)}")
-                return ""
-        
-        elif test_type.startswith("Path-Subdomain:") or test_type.startswith("Path-Domain-Name:") or test_type.startswith("Path-Domain:"):
-            # Extract the last part of the path containing the tested value
-            path_parts = parsed.path.strip('/').split('/')
-            if path_parts:
-                # The last part of the path will be the value we're testing (subdomain, domain name, or domain)
-                test_value = path_parts[-1]
-                return test_value
-            return ""
-        
-        elif test_type == "Subdomain":
-            # For Subdomain, show only the subdomain
-            hostname = parsed.netloc
-            # Remove port if it exists
-            if ':' in hostname:
-                hostname = hostname.split(':')[0]
-                
-            parts = hostname.split('.')
-            # If it has at least 3 parts (subdomain.domain.tld) or
-            # if it has at least 2 parts but is not a compound TLD (like .com.br)
-            if len(parts) >= 3 or (len(parts) == 2 and not any(hostname.endswith(f".{tld}") for tld in ['co.uk', 'com.br', 'com.au', 'org.br', 'net.br', 'com.vc'])):
-                return parts[0]
-            return "[none]"
-        
-        elif test_type == "Domain Name":
-            # For Domain Name, show the domain name without TLD
-            hostname = parsed.netloc
-            # Remove port if it exists
-            if ':' in hostname:
-                hostname = hostname.split(':')[0]
-                
-            parts = hostname.split('.')
-            
-            # Identify common compound TLDs
-            compound_tlds = ['co.uk', 'com.br', 'com.au', 'org.br', 'net.br', 'com.vc', 'edu.br', 'gov.br']
-            
-            # Check special case for domains with compound TLDs
-            for tld in compound_tlds:
-                if hostname.endswith(f".{tld}"):
-                    # If it's a domain with subdomain and compound TLD: sub.domain.com.br
-                    if len(parts) > 3:
-                        return parts[-3]  # Returns 'domain'
-                    # If it's a normal domain with compound TLD: domain.com.br
-                    else:
-                        return parts[0]  # Returns 'domain'
-            
-            # For normal non-compound domains
-            if len(parts) >= 3:  # sub.domain.com
-                return parts[-2]  # Returns 'domain'
-            elif len(parts) == 2:  # domain.com
-                return parts[0]  # Returns 'domain'
-            
-            return hostname
-            
-        elif test_type == "Domain":
-            # For Domain, show the full domain including TLD (without subdomain)
-            hostname = parsed.netloc
-            # Remove port if it exists
-            if ':' in hostname:
-                hostname = hostname.split(':')[0]
-                
-            parts = hostname.split('.')
-            
-            # Identify common compound TLDs
-            compound_tlds = [
-                    "co.uk", "com.br", "com.au", "org.br", "net.br",
-                    "com.vc", "edu.br", "gov.br", "gov.uk", "gov.au",
-                    "gov.za", "edu.au", "edu.uk", "ac.uk", "org.uk",
-                    "net.uk", "com.mx", "com.ar", "com.co", "com.pe",
-                    "com.cl", "com.ec", "com.bo", "com.uy", "com.pa",
-                    "org.mx", "org.ar", "org.co", "org.pe", "org.cl",
-                    "org.ec", "org.bo", "org.uy", "org.pa", "gov.mx",
-                    "gov.ar", "gov.co", "gov.pe", "gov.cl", "gov.ec",
-                    "gov.bo", "gov.uy", "gov.pa"
-            ]
-            
-            # Check special case for domains with compound TLDs
-            for tld in compound_tlds:
-                if hostname.endswith(f".{tld}"):
-                    # If it's a domain with subdomain and compound TLD: sub.domain.com.br
-                    if len(parts) > 3:
-                        return f"{parts[-3]}.{tld}"  # Returns 'domain.com.br'
-                    # If it's a normal domain with compound TLD: domain.com.br
-                    else:
-                        return hostname  # Returns 'domain.com.br'
-            
-            # For normal non-compound domains
-            if len(parts) >= 3:  # sub.domain.com
-                return f"{parts[-2]}.{parts[-1]}"  # Returns 'domain.com'
-            elif len(parts) == 2:  # domain.com
-                return hostname  # Returns 'domain.com'
-            
-            return hostname
-            
-        elif test_type.startswith("Brute Force:"):
-            # For Brute Force, show only the keyword being tested
-            # Extract the keyword from the test type (format: "Brute Force: word")
-            return test_type.split(": ")[1] if ": " in test_type else ""
-    
+
     def process_url_list(self, url_list_file: str):
         """Process multiple URLs from a file."""
         urls = load_url_list(url_list_file)
@@ -507,7 +486,8 @@ class LeftOver:
             target_url,
             self.brute_mode, 
             self.backup_words,
-            self.verbose
+            self.verbose,
+            self.brute_recursive
         )
         
         if not test_urls:
@@ -522,11 +502,75 @@ class LeftOver:
                 # Special case for Brute Force: show only "Testing Brute Force: [word]" without url_display
                 if test_type.startswith("Brute Force:"):
                     word = test_type.split(": ")[1] if ": " in test_type else ""
-                    console.print(f"[bold yellow]Testing Brute Force:[/bold yellow] {word}")
+                    parsed = urllib.parse.urlparse(base_url)
+                    path = parsed.path.strip('/')
+                    if path:
+                        console.print(f"[bold yellow]Testing Brute Force:[/bold yellow] {word} [bold cyan](at /{path})[/bold cyan]")
+                    else:
+                        console.print(f"[bold yellow]Testing Brute Force:[/bold yellow] {word} [bold cyan](at root)[/bold cyan]")
+                    
+                    # Debug if verbose is enabled
+                    if self.verbose:
+                        from utils.debug_utils import debug_brute_force_path
+                        debug_brute_force_path(f"{base_url}/{word}", test_type)
                 # Special case for Brute Force Path: fix display format
                 elif test_type.startswith("Brute Force Path:"):
                     word = test_type.split(": ")[1] if ": " in test_type else ""
-                    console.print(f"[bold yellow]Testing Brute Force Path:[/bold yellow] {word}")
+                    parsed = urllib.parse.urlparse(base_url)
+                    path = parsed.path.strip('/')
+                    if path:
+                        console.print(f"[bold yellow]Testing Brute Force Path:[/bold yellow] {word} [bold cyan](at /{path})[/bold cyan]")
+                    else:
+                        console.print(f"[bold yellow]Testing Brute Force Path:[/bold yellow] {word} [bold cyan](at root)[/bold cyan]")
+                    
+                    # Debug if verbose is enabled
+                    if self.verbose:
+                        from utils.debug_utils import debug_brute_force_path
+                        debug_brute_force_path(f"{base_url}/{word}", test_type)
+                # Special case for Brute Force Recursive: show path info
+                elif test_type.startswith("Brute Force Recursive:"):
+                    word = test_type.split(": ")[1] if ": " in test_type else ""
+                    parsed = urllib.parse.urlparse(base_url)
+                    path = parsed.path.strip('/')
+                    # Get the directory part of the path (remove last segment which is our test word)
+                    path_without_word = '/'.join(path.split('/')[:-1])
+                    if path_without_word:
+                        console.print(f"[bold yellow]Testing Brute Force Recursive:[/bold yellow] {word} [bold cyan](at /{path_without_word})[/bold cyan]")
+                    else:
+                        console.print(f"[bold yellow]Testing Brute Force Recursive:[/bold yellow] {word} [bold cyan](at root)[/bold cyan]")
+                    
+                    # Debug if verbose is enabled
+                    if self.verbose:
+                        from utils.debug_utils import debug_brute_force_path
+                        debug_brute_force_path(f"{base_url}/{word}", test_type)
+                # Special cases for new test types Path-Individual:
+                elif test_type.startswith("Path-Individual:"):
+                    path_component = test_type.split(": ")[1] if ": " in test_type else ""
+                    console.print(f"[bold yellow]Testing Path-Individual:[/bold yellow] {path_component}")
+                # Special cases for Path-Current-Path:
+                elif test_type.startswith("Path-Current-Path:"):
+                    path_component = test_type.split(": ")[1] if ": " in test_type else ""
+                    console.print(f"[bold yellow]Testing Path-Current-Path:[/bold yellow] {path_component}")
+                elif test_type == "Path-Current-Subdomain":
+                    # Extract parent path to show context
+                    parsed = urllib.parse.urlparse(base_url)
+                    parent_path = '/'.join(parsed.path.strip('/').split('/')[:-1])
+                    console.print(f"[bold yellow]Testing Path-Current-Subdomain[/bold yellow] [bold cyan](/{parent_path}):[/bold cyan] {url_display}")
+                elif test_type == "Path-Current-Domain-Name":
+                    # Extract parent path to show context
+                    parsed = urllib.parse.urlparse(base_url)
+                    parent_path = '/'.join(parsed.path.strip('/').split('/')[:-1])
+                    console.print(f"[bold yellow]Testing Path-Current-Domain-Name[/bold yellow] [bold cyan](/{parent_path}):[/bold cyan] {url_display}")
+                elif test_type == "Path-Current-Domain":
+                    # Extract parent path to show context
+                    parsed = urllib.parse.urlparse(base_url)
+                    parent_path = '/'.join(parsed.path.strip('/').split('/')[:-1])
+                    console.print(f"[bold yellow]Testing Path-Current-Domain[/bold yellow] [bold cyan](/{parent_path}):[/bold cyan] {url_display}")
+                elif test_type == "Path-Current-Hostname":
+                    # Extract parent path to show context
+                    parsed = urllib.parse.urlparse(base_url)
+                    parent_path = '/'.join(parsed.path.strip('/').split('/')[:-1])
+                    console.print(f"[bold yellow]Testing Path-Current-Hostname[/bold yellow] [bold cyan](/{parent_path}):[/bold cyan] {url_display}")
                 else:
                     console.print(f"[bold yellow]Testing {test_type}:[/bold yellow] {url_display}")
             else:
@@ -535,10 +579,76 @@ class LeftOver:
                 
                 # Special case for Brute Force
                 if test_type.startswith("Brute Force:"):
-                    print(f"Testing Brute Force: {test_type.split(': ')[1] if ': ' in test_type else ''}")
+                    word = test_type.split(": ")[1] if ": " in test_type else ""
+                    parsed = urllib.parse.urlparse(base_url)
+                    path = parsed.path.strip('/')
+                    if path:
+                        print(f"Testing Brute Force: {word} (at /{path})")
+                    else:
+                        print(f"Testing Brute Force: {word} (at root)")
+                    
+                    # Debug if verbose is enabled
+                    if self.verbose:
+                        from utils.debug_utils import debug_brute_force_path
+                        debug_brute_force_path(f"{base_url}/{word}", test_type)
                 # Special case for Brute Force Path
                 elif test_type.startswith("Brute Force Path:"):
-                    print(f"Testing Brute Force Path: {test_type.split(': ')[1] if ': ' in test_type else ''}")
+                    word = test_type.split(": ")[1] if ": " in test_type else ""
+                    parsed = urllib.parse.urlparse(base_url)
+                    path = parsed.path.strip('/')
+                    if path:
+                        print(f"Testing Brute Force Path: {word} (at /{path})")
+                    else:
+                        print(f"Testing Brute Force Path: {word} (at root)")
+                    
+                    # Debug if verbose is enabled
+                    if self.verbose:
+                        from utils.debug_utils import debug_brute_force_path
+                        debug_brute_force_path(f"{base_url}/{word}", test_type)
+                # Special case for Brute Force Recursive: show path info
+                elif test_type.startswith("Brute Force Recursive:"):
+                    word = test_type.split(": ")[1] if ": " in test_type else ""
+                    parsed = urllib.parse.urlparse(base_url)
+                    path = parsed.path.strip('/')
+                    # Get the directory part of the path (remove last segment which is our test word)
+                    path_without_word = '/'.join(path.split('/')[:-1])
+                    if path_without_word:
+                        print(f"Testing Brute Force Recursive: {word} (/{path_without_word})")
+                    else:
+                        print(f"Testing Brute Force Recursive: {word} (/)")
+                    
+                    # Debug if verbose is enabled
+                    if self.verbose:
+                        from utils.debug_utils import debug_brute_force_path
+                        debug_brute_force_path(f"{base_url}/{word}", test_type)
+                # Special cases for new test types Path-Individual:
+                elif test_type.startswith("Path-Individual:"):
+                    path_component = test_type.split(": ")[1] if ": " in test_type else ""
+                    print(f"Testing Path-Individual: {path_component}")
+                # Special cases for Path-Current-Path:
+                elif test_type.startswith("Path-Current-Path:"):
+                    path_component = test_type.split(": ")[1] if ": " in test_type else ""
+                    print(f"Testing Path-Current-Path: {path_component}")
+                elif test_type == "Path-Current-Subdomain":
+                    # Extract parent path to show context
+                    parsed = urllib.parse.urlparse(base_url)
+                    parent_path = '/'.join(parsed.path.strip('/').split('/')[:-1])
+                    print(f"Testing Path-Current-Subdomain (/{parent_path}): {url_display}")
+                elif test_type == "Path-Current-Domain-Name":
+                    # Extract parent path to show context
+                    parsed = urllib.parse.urlparse(base_url)
+                    parent_path = '/'.join(parsed.path.strip('/').split('/')[:-1])
+                    print(f"Testing Path-Current-Domain-Name (/{parent_path}): {url_display}")
+                elif test_type == "Path-Current-Domain":
+                    # Extract parent path to show context
+                    parsed = urllib.parse.urlparse(base_url)
+                    parent_path = '/'.join(parsed.path.strip('/').split('/')[:-1])
+                    print(f"Testing Path-Current-Domain (/{parent_path}): {url_display}")
+                elif test_type == "Path-Current-Hostname":
+                    # Extract parent path to show context
+                    parsed = urllib.parse.urlparse(base_url)
+                    parent_path = '/'.join(parsed.path.strip('/').split('/')[:-1])
+                    print(f"Testing Path-Current-Hostname (/{parent_path}): {url_display}")
                 else:
                     print(f"Testing {test_type}: {url_display}")
             
@@ -560,6 +670,186 @@ class LeftOver:
             else:
                 print()
 
+    def _get_display_url(self, base_url: str, test_type: str) -> str:
+            """
+            Returns the appropriate representation of the URL being tested based on the test type.
+            """
+            parsed = urllib.parse.urlparse(base_url)
+
+            if test_type == "Base URL":
+                # For Base URL, show the full domain
+                return parsed.netloc
+
+            elif test_type == "Full URL":
+                # For Full URL, show domain + full path
+                path = parsed.path.strip('/')
+                if path:
+                    return f"{parsed.netloc}/{path}"
+                return parsed.netloc
+
+            elif test_type == "Path":
+                # For Path, show only the path
+                path = parsed.path.strip('/')
+                if path:
+                    return f"/{path}"
+                return "/"
+
+            elif test_type.startswith("Path-Current-Path:"):
+                # For the test that checks path/path, extract information from the test type
+                path_component = test_type.split(': ')[1] if ': ' in test_type else ""
+                return path_component
+
+            elif test_type.startswith("Path-Individual:"):
+                # For the test that checks individual path segments
+                path_component = test_type.split(': ')[1] if ': ' in test_type else ""
+                return path_component
+
+            elif test_type.startswith("Path-Current-"):
+                # For new tests without the component name in the type
+                path = parsed.path.strip('/')
+
+                # Extract the last component of the URL, which is the component being tested
+                path_parts = path.split("/")
+                if path_parts:
+                    return path_parts[-1]
+                return ""
+
+            elif test_type.startswith("Segment"):
+                # Extract the segment number from the test type
+                try:
+                    segment_num = int(test_type.split(' ')[-1])
+
+                    # Extract the path from the URL and split into segments
+                    original_path = parsed.path.strip('/')
+
+                    if not original_path:
+                        return ""
+
+                    # Check path content for debugging
+                    if self.verbose:
+                        print(f"[DEBUG-DISPLAY] URL: {base_url}, Path: {original_path}")
+
+                    # The simplest solution is to check the last part of the base_url
+                    # to identify which segment we're testing
+                    base_path = original_path  # This is the path in the base_url (e.g. 'Panel')
+
+                    if self.verbose:
+                        print(f"[DEBUG-DISPLAY] Base path: {base_path}")
+
+                    # Get the correct segment from the full original URL
+                    # For URLs like `/Panel/Account/Login`, when testing Segment 2,
+                    # we want to return 'Account'
+
+                    # In this case, our segment is simply the base path itself
+                    # since we're testing a specific segment at a time
+                    return base_path
+
+                except (ValueError, IndexError) as e:
+                    if self.verbose:
+                        print(f"[DEBUG-DISPLAY] Error processing segment: {str(e)}")
+                    return ""
+
+            elif test_type.startswith("Path-Subdomain:") or test_type.startswith("Path-Domain-Name:") or test_type.startswith("Path-Domain:"):
+                # Extract the last part of the path containing the tested value
+                path_parts = parsed.path.strip('/').split('/')
+                if path_parts:
+                    # The last part of the path will be the value we're testing (subdomain, domain name, or domain)
+                    test_value = path_parts[-1]
+                    return test_value
+                return ""
+
+            elif test_type == "Subdomain":
+                # For Subdomain, show only the subdomain
+                hostname = parsed.netloc
+                # Remove port if it exists
+                if ':' in hostname:
+                    hostname = hostname.split(':')[0]
+
+                parts = hostname.split('.')
+                # If it has at least 3 parts (subdomain.domain.tld) or
+                # if it has at least 2 parts but is not a compound TLD (like .com.br)
+                if len(parts) >= 3 or (len(parts) == 2 and not any(hostname.endswith(f".{tld}") for tld in ['co.uk', 'com.br', 'com.au', 'org.br', 'net.br', 'com.vc'])):
+                    return parts[0]
+                return "[none]"
+
+            elif test_type == "Domain Name":
+                # For Domain Name, show the domain name without TLD
+                hostname = parsed.netloc
+                # Remove port if it exists
+                if ':' in hostname:
+                    hostname = hostname.split(':')[0]
+
+                parts = hostname.split('.')
+
+                # Identify common compound TLDs
+                compound_tlds = ['co.uk', 'com.br', 'com.au', 'org.br', 'net.br', 'com.vc', 'edu.br', 'gov.br']
+
+                # Check special case for domains with compound TLDs
+                for tld in compound_tlds:
+                    if hostname.endswith(f".{tld}"):
+                        # If it's a domain with subdomain and compound TLD: sub.domain.com.br
+                        if len(parts) > 3:
+                            return parts[-3]  # Returns 'domain'
+                        # If it's a normal domain with compound TLD: domain.com.br
+                        else:
+                            return parts[0]  # Returns 'domain'
+
+                # For normal non-compound domains
+                if len(parts) >= 3:  # sub.domain.com
+                    return parts[-2]  # Returns 'domain'
+                elif len(parts) == 2:  # domain.com
+                    return parts[0]  # Returns 'domain'
+
+                return hostname
+
+            elif test_type == "Domain":
+                # For Domain, show the full domain including TLD (without subdomain)
+                hostname = parsed.netloc
+                # Remove port if it exists
+                if ':' in hostname:
+                    hostname = hostname.split(':')[0]
+
+                parts = hostname.split('.')
+
+                # Identify common compound TLDs
+                compound_tlds = [
+                        "co.uk", "com.br", "com.au", "org.br", "net.br",
+                        "com.vc", "edu.br", "gov.br", "gov.uk", "gov.au",
+                        "gov.za", "edu.au", "edu.uk", "ac.uk", "org.uk",
+                        "net.uk", "com.mx", "com.ar", "com.co", "com.pe",
+                        "com.cl", "com.ec", "com.bo", "com.uy", "com.pa",
+                        "org.mx", "org.ar", "org.co", "org.pe", "org.cl",
+                        "org.ec", "org.bo", "org.uy", "org.pa", "gov.mx",
+                        "gov.ar", "gov.co", "gov.pe", "gov.cl", "gov.ec",
+                        "gov.bo", "gov.uy", "gov.pa"
+                ]
+
+                # Check special case for domains with compound TLDs
+                for tld in compound_tlds:
+                    if hostname.endswith(f".{tld}"):
+                        # If it's a domain with subdomain and compound TLD: sub.domain.com.br
+                        if len(parts) > 3:
+                            return f"{parts[-3]}.{tld}"  # Returns 'domain.com.br'
+                        # If it's a normal domain with compound TLD: domain.com.br
+                        else:
+                            return hostname  # Returns 'domain.com.br'
+
+                # For normal non-compound domains
+                if len(parts) >= 3:  # sub.domain.com
+                    return f"{parts[-2]}.{parts[-1]}"  # Returns 'domain.com'
+                elif len(parts) == 2:  # domain.com
+                    return hostname  # Returns 'domain.com'
+
+                return hostname
+
+            elif test_type.startswith("Brute Force:") or test_type.startswith("Brute Force Recursive:"):
+                # For Brute Force, show only the keyword being tested
+                # Extract the keyword from the test type (format: "Brute Force: word")
+                return test_type.split(": ")[1] if ": " in test_type else ""
+
+            # Fallback for any other test types
+            return base_url
+
     def print_summary(self):
         """Print a summary of the results found."""
         from utils.report import generate_summary_report
@@ -574,8 +864,3 @@ class LeftOver:
         # Clear tracking sets when starting a new scan
         self.tested_urls.clear()
         self.found_urls.clear()
-        
-        # ...existing code for running the scan...
-        
-        # When displaying results, duplicates will already have been filtered
-        # ...existing code...

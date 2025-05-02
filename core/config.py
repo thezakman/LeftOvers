@@ -9,7 +9,8 @@ from app_settings import (
     DEFAULT_THREADS, 
     MAX_FILE_SIZE_MB,
     USER_AGENTS, 
-    DEFAULT_USER_AGENT
+    DEFAULT_USER_AGENT,
+    IGNORE_CONTENT
 )
 # Default headers for HTTP requests
 DEFAULT_HEADERS = {
@@ -21,11 +22,13 @@ DEFAULT_HEADERS = {
     "Cache-Control": "no-cache",
 }
 
+# ─── Default list of extensions to test ───────────────────
+
 # Organized extensions by categories
 TEXT_CONFIG_EXTENSIONS = [
     "txt", "log", "log1", "json", "xml", "yaml", "yml", "csv",
     "properties", "plist", "config", "cfg", "ini", "conf", "env", "settings",
-    "lock", "tmpfile", "test", "sample",
+    "lock", "tmpfile", "test", "sample", "md",
 ]
 
 DATABASE_EXTENSIONS = [
@@ -91,6 +94,12 @@ DEFAULT_EXTENSIONS = [
 # ─── Default list of common backup words/directories to test ───────────────────
 
 # Organize backup words by categories
+DEFAULT_FILES_WORDS = [
+    "readme", "README", "composer", "package", "debug", "test",
+    "logging", "trace", "ws", "swagger", "contents", "content",
+    "assets",
+]
+
 BACKUP_DIRECTORY_WORDS = [
     "anterior", "antigo", "archive", "archived", "archives", "atual",
     "back", "backup", "bkp", "copia", "copy", "deletar", "dev",
@@ -164,7 +173,7 @@ PTBR_TECHNICAL_WORDS = [
     "criptografia", "digitalizar", "download", "email", "entrada",
     "enviado", "extranet", "fila", "firewall", "impressao",
     "impressora", "intranet", "mensagem", "proxy", "rede", "saida",
-    "scanner", "token", "upload", "vpn",
+    "scanner", "token", "upload", "uploads", "vpn",
 ]
 
 DATABASE_CONFIG_WORDS = [
@@ -175,6 +184,7 @@ DATABASE_CONFIG_WORDS = [
 
 # Create the final DEFAULT_BACKUP_WORDS list from all categories
 DEFAULT_BACKUP_WORDS = [
+    *DEFAULT_FILES_WORDS,
     *BACKUP_DIRECTORY_WORDS,
     *WEB_RELATED_WORDS,
     *VERSION_CONTROL_WORDS,

@@ -104,6 +104,48 @@ def debug_segment_url(url: str, test_type: str) -> None:
     except Exception as e:
         print(f"[DEBUG-SEGMENT-URL] Error in segment analysis: {str(e)}")
 
+def debug_brute_force_path(url: str, test_type: str) -> None:
+    """
+    Shows clearly in which path a brute force test is being executed.
+    
+    Args:
+        url: The URL being tested
+        test_type: The type of test being performed
+    """
+    print(f"\n[DEBUG-BRUTE] Analyzing brute force URL: {url}")
+    
+    # Check if this is indeed a brute force test
+    if not (test_type.startswith("Brute Force:") or test_type.startswith("Brute Force Recursive:")):
+        print(f"[DEBUG-BRUTE] Test type '{test_type}' is not a brute force test. Ignoring.")
+        return
+    
+    try:
+        parsed = urllib.parse.urlparse(url)
+        path = parsed.path.strip('/')
+        
+        # Extract the word being tested
+        word = test_type.split(": ")[1] if ": " in test_type else "[unknown]"
+        
+        if not path or path == word:
+            print(f"[DEBUG-BRUTE] Testing '{word}' at ROOT domain")
+            print(f"[DEBUG-BRUTE] Full URL: {parsed.scheme}://{parsed.netloc}/{word}")
+            return
+            
+        # Split path into segments
+        segments = path.split('/')
+        
+        # If the last segment is our test word, remove it to get the parent path
+        if segments and segments[-1] == word:
+            parent_path = '/'.join(segments[:-1])
+            print(f"[DEBUG-BRUTE] Testing '{word}' at path: /{parent_path}")
+            print(f"[DEBUG-BRUTE] Full path being tested: /{parent_path}/{word}")
+        else:
+            print(f"[DEBUG-BRUTE] Testing '{word}' at path: /{path}")
+            print(f"[DEBUG-BRUTE] Full URL: {parsed.scheme}://{parsed.netloc}/{path}/{word}")
+    
+    except Exception as e:
+        print(f"[DEBUG-BRUTE] Error in brute force path analysis: {str(e)}")
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python debug_utils.py URL [segment_number]")

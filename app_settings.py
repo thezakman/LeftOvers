@@ -3,7 +3,7 @@ Global application settings for LeftOvers tool.
 """
 
 # Version information
-VERSION = "1.1.8"
+VERSION = "1.1.9"
 
 # General settings
 DEBUG = False
@@ -23,6 +23,13 @@ CHUNK_SIZE = 8192      # Chunk size for streaming downloads (in bytes)
 
 # Output settings
 OUTPUT_FORMAT = "console"  # Options: console, json, csv
+
+# Content type filtering
+IGNORE_CONTENT = [
+    "text/html",               # Uncomment to ignore normal HTML pages
+    # "application/javascript",  # Uncomment to ignore JavaScript files
+    # "application/xml",         # Uncomment to ignore XML files
+]
 
 # User-Agent settings
 # Default User-Agent (will be used if no rotation is enabled)

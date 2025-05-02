@@ -4,7 +4,9 @@ Classes for storing and processing scan results.
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
+
+from app_settings import IGNORE_CONTENT
 
 @dataclass
 class ScanResult:
@@ -46,3 +48,32 @@ class ScanResult:
             result["partial_content"] = True
             
         return result
+
+    def check_ignored_content_type(self) -> bool:
+        """
+        Verifica se o tipo de conteúdo está na lista de tipos ignorados.
+        
+        Returns:
+            bool: True se o tipo de conteúdo deve ser ignorado
+        """
+        if not IGNORE_CONTENT:
+            return False
+            
+        if not self.content_type:
+            return False
+            
+        # Many servers include additional parameters in Content-Type
+        # like charset=utf-8, so we extract only the main part
+        content_type_base = self.content_type.split(';')[0].strip()
+        
+        for ignored_type in IGNORE_CONTENT:
+            # Exact or "startswith" check for types like application/json vs application/json+ld
+            if content_type_base == ignored_type or content_type_base.startswith(f"{ignored_type}+"):
+                return True
+                
+        return False
+        
+    def mark_as_false_positive(self, reason: str) -> None:
+        """Mark a result as false positive with a reason."""
+        self.false_positive = True
+        self.false_positive_reason = reason

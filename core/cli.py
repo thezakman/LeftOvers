@@ -57,8 +57,8 @@ def parse_arguments():
     ext_group.add_argument("-w", "--wordlist", help="File with list of words to use as extensions")
     
     # Configuration options
-    parser.add_argument("-t", "--timeout", type=int, default=DEFAULT_TIMEOUT, help="Timeout in seconds for each request")
-    parser.add_argument("--threads", type=int, default=DEFAULT_THREADS, help="Number of parallel threads")
+    parser.add_argument("-to", "--timeout", type=int, default=DEFAULT_TIMEOUT, help="Timeout in seconds for each request")
+    parser.add_argument("-t", "--threads", type=int, default=DEFAULT_THREADS, help="Number of parallel threads")
     parser.add_argument("-a", "--user-agent", help="Custom User-Agent")
     parser.add_argument("-ra", "--rotate-agents", action="store_true", help="Randomly rotate User-Agents")
     parser.add_argument("-H", "--header", action="append", help="Custom header in format 'Name: Value' (can be used multiple times)")
@@ -67,8 +67,9 @@ def parse_arguments():
     parser.add_argument("--output-per-url", action="store_true", help="Create a separate output file for each URL (when used with --list)")
     parser.add_argument("--test-index", action="store_true", help="Test for index.{extension} on domain URLs")
     
-    # Brute force option
+    # Brute force options
     parser.add_argument("-b", "--brute", action="store_true", help="Enable brute force mode with common backup words")
+    parser.add_argument("-br", "--brute-recursive", action="store_true", help="Enable recursive brute force mode (test each path level)")
     
     # Filters
     parser.add_argument("-sc", "--status", help="Filter by status codes (e.g., 200,301,403)")
@@ -150,10 +151,13 @@ def configure_scanner_from_args(args):
     )
             
     # Add brute force capability if requested
-    if args.brute:
+    if args.brute or args.brute_recursive:
         if not args.silent:
             logger.info(f"Brute force mode enabled with {len(DEFAULT_BACKUP_WORDS)} common backup words")
+            if args.brute_recursive:
+                logger.info("Recursive brute force mode enabled - testing all path levels")
         scanner.brute_mode = True
+        scanner.brute_recursive = args.brute_recursive
         scanner.backup_words = DEFAULT_BACKUP_WORDS
     
     return scanner

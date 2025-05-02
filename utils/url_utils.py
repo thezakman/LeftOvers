@@ -14,7 +14,8 @@ def generate_test_urls(
         target_url: str, 
         brute_mode: bool = False, 
         backup_words: List[str] = None,
-        verbose: bool = False) -> Tuple[List[Tuple[str, str]], Dict, Dict]:
+        verbose: bool = False,
+        brute_recursive: bool = False) -> Tuple[List[Tuple[str, str]], Dict, Dict]:
     """Generate URLs to be tested based on the target URL."""
     parsed_url = parse_url(target_url)
     if not parsed_url:
@@ -136,21 +137,94 @@ def generate_test_urls(
         domain_with_suffix = f"{domain}.{suffix}"
         test_url = f"{scheme}://{full_hostname}/{domain_with_suffix}"
         tests.append((test_url, "Domain"))
+        
+    # NEW FEATURE: Test domain components in the current directory
+    # This feature tests subdomain, domain and full domain within the current path
+    if path_label:
+        # Test each path segment in the full path - second occurrence
+        for segment in path_segments:
+            if '.' not in segment:  # Don't test files
+                test_url = f"{scheme}://{full_hostname}/{path_label}/{segment}"
+                tests.append((test_url, f"Path-Current-Path: /{segment}"))
+                
+        # Create a list of all path levels for testing
+        path_levels = []
+        # Add the complete path
+        path_levels.append(path_label)
+        
+        # Add each intermediate path level
+        current_path = ""
+        for i, segment in enumerate(path_segments):
+            if i == 0:
+                current_path = segment
+            else:
+                current_path = f"{current_path}/{segment}"
+                
+            # Add this path level (avoid duplicating the full path)
+            if current_path != path_label:
+                path_levels.append(current_path)
+        
+        # For each path level, test subdomain, domain name, full domain and hostname
+        for path_level in path_levels:
+            if subdomain:
+                # Test subdomain in each path level
+                test_url = f"{scheme}://{full_hostname}/{path_level}/{subdomain}"
+                tests.append((test_url, f"Path-Current-Subdomain: /{path_level}"))
+                
+            if domain:
+                # Test domain name in each path level
+                test_url = f"{scheme}://{full_hostname}/{path_level}/{domain}"
+                tests.append((test_url, f"Path-Current-Domain-Name: /{path_level}"))
+                
+            if domain and suffix:
+                # Test full domain in each path level
+                domain_with_suffix = f"{domain}.{suffix}"
+                test_url = f"{scheme}://{full_hostname}/{path_level}/{domain_with_suffix}"
+                tests.append((test_url, f"Path-Current-Domain: /{path_level}"))
+                
+            # Test the full hostname in each path level
+            test_url = f"{scheme}://{full_hostname}/{path_level}/{full_hostname}"
+            tests.append((test_url, f"Path-Current-Hostname: /{path_level}"))
 
     # Add brute force tests if enabled
     if brute_mode and backup_words:
-        for word in backup_words:
-            # Use better test type naming without redundancy
-            test_type = f"Brute Force: {word}"
-            
-            # If we have a path, we prefer to test domain.com/path/word (more specific)
-            if path_label:
+        # Normal brute force (only at the leaf directory)
+        if path_label:
+            for word in backup_words:
+                test_type = f"Brute Force: {word}"
                 test_url = f"{scheme}://{full_hostname}/{path_label}/{word}"
                 tests.append((test_url, test_type))
-            else:
-                # If we don't have a path, we just test domain.com/word
+        else:
+            for word in backup_words:
+                test_type = f"Brute Force: {word}"
                 test_url = f"{scheme}://{full_hostname}/{word}"
                 tests.append((test_url, test_type))
+
+        # Recursive brute force (test each level of the path)
+        if brute_recursive and path_segments:
+            # Create a list of path levels to test
+            path_levels = []
+            
+            # First, get the root level
+            path_levels.append(f"{scheme}://{full_hostname}")
+            
+            # Then add each intermediate level
+            current_path = ""
+            for i, segment in enumerate(path_segments[:-1]):
+                if i == 0:
+                    current_path = segment
+                else:
+                    current_path = f"{current_path}/{segment}"
+                    
+                # Add this path level
+                path_levels.append(f"{scheme}://{full_hostname}/{current_path}")
+            
+            # For each path level, run brute force tests
+            for level in path_levels:
+                for word in backup_words:
+                    test_type = f"Brute Force Recursive: {word}"
+                    test_url = f"{level}/{word}"
+                    tests.append((test_url, test_type))
 
     # For advanced debugging
     if verbose:

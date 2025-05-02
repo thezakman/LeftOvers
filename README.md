@@ -65,6 +65,12 @@ python LeftOvers.py -l urls.txt
 ### Advanced Features
 
 ```bash
+# Enable brute force mode with common backup words
+python LeftOvers.py -u http://example.com -b
+
+# Enable recursive brute force mode (test each path level)
+python LeftOvers.py -u http://example.com -br
+
 # Enable brute force mode with custom wordlist
 python LeftOvers.py -u http://example.com -b --wordlist wordlists/custom.txt
 
