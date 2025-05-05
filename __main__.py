@@ -1,6 +1,6 @@
 """
 Allows running the package as a module.
-Example: python -m LeftOvers -u http://example.com
+Example: python -m LeftOvers -u http://www.example.com
 """
 
 from core.cli import main
