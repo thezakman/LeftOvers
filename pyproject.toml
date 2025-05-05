@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "LeftOvers"
-version = "0.1.0"
-description = "Um scanner avançado para encontrar arquivos residuais em servidores web"
+version = "1.1.9"
+description = "An advanced scanner to find residual files on web servers"
 readme = "README.md"
 authors = [
-    {name = "thezakman"}
+    {name = "TheZakMan"}
 ]
-requires-python = ">=3.6"
+requires-python = ">=3.7"
 dependencies = [
     "requests>=2.27.1",
     "colorama>=0.4.4",
@@ -22,10 +22,26 @@ dependencies = [
     "cryptography>=36.0.0",
     "concurrent-futures-pool>=1.0.0",
 ]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Information Technology",
+    "Topic :: Security",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+]
+keywords = ["security", "scanner", "web", "pentest", "residual files", "backups"]
 
 [project.scripts]
-leftovers = "LeftOvers:main"
+leftovers = "LeftOvers.__main__:main"
 
 [project.urls]
 "Homepage" = "https://github.com/thezakman/LeftOvers"
 "Bug Tracker" = "https://github.com/thezakman/LeftOvers/issues"
+
+[tool.setuptools]
+packages = ["LeftOvers", "core", "utils"]

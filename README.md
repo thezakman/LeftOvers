@@ -6,15 +6,32 @@
 
 ## 📋 Installation
 
+### From Source
+
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/LeftOvers.git
+git clone https://github.com/TheZakMan/LeftOvers.git
 
 # Navigate to directory
 cd LeftOvers
 
 # Install dependencies
 pip install -r requirements.txt
+```
+
+### As a Python Package
+
+```bash
+# Install directly from the repository
+pip install git+https://github.com/TheZakMan/LeftOvers.git
+
+# Or install locally after cloning
+git clone https://github.com/TheZakMan/LeftOvers.git
+cd LeftOvers
+pip install .
+
+# For development (editable mode)
+pip install -e .
 ```
 
 ## 📁 Project Structure

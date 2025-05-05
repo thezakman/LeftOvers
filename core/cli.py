@@ -6,6 +6,7 @@ import os
 import sys
 import argparse
 import traceback
+import signal
 
 from core.config import (
     VERSION, DEFAULT_TIMEOUT, DEFAULT_THREADS, DEFAULT_EXTENSIONS, 
@@ -162,8 +163,23 @@ def configure_scanner_from_args(args):
     
     return scanner
 
+def handle_interrupt(signum, frame):
+    """Handle keyboard interrupt gracefully."""
+    # Verify if the signal is from a keyboard interrupt
+    import sys
+    
+    # check if silent mode is enabled
+    silent = '-s' in sys.argv or '--silent' in sys.argv
+    
+    if not silent:
+        from utils.console import console
+        console.print("\n[bold red]Interrupted by user. Cleaning up...[/bold red]")
+    sys.exit(0)
+
 def main():
     """Main function for the command-line interface."""
+    signal.signal(signal.SIGINT, handle_interrupt)
+    
     try:
         args = parse_arguments()
         scanner = configure_scanner_from_args(args)

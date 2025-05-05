@@ -5,9 +5,9 @@ from setuptools import setup, find_packages
 
 setup(
     name="LeftOvers",
-    version="0.1.0",
-    description="Um scanner avançado para encontrar arquivos residuais em servidores web",
-    author="thezakman",
+    version="1.1.9",
+    description="An advanced scanner to find residual files on web servers",
+    author="TheZakMan",
     packages=find_packages(),
     include_package_data=True,
     install_requires=[
@@ -23,8 +23,21 @@ setup(
     ],
     entry_points={
         "console_scripts": [
-            "leftovers=LeftOvers:main",
+            "leftovers=LeftOvers.__main__:main",
         ],
     },
-    python_requires=">=3.6",
+    python_requires=">=3.7",
+    classifiers=[
+        "Development Status :: 4 - Beta",
+        "Intended Audience :: Information Technology",
+        "Topic :: Security",
+        "License :: OSI Approved :: MIT License",
+        "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.7",
+        "Programming Language :: Python :: 3.8",
+        "Programming Language :: Python :: 3.9",
+        "Programming Language :: Python :: 3.10",
+        "Programming Language :: Python :: 3.11",
+    ],
+    keywords="security, scanner, web, pentest, residual files, backups",
 )
