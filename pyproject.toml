@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "LeftOvers"
-version = "1.1.9"
+version = "1.2.0"
 description = "An advanced scanner to find residual files on web servers"
 readme = "README.md"
 authors = [
@@ -44,4 +44,4 @@ leftovers = "LeftOvers.__main__:main"
 "Bug Tracker" = "https://github.com/thezakman/LeftOvers/issues"
 
 [tool.setuptools]
-packages = ["LeftOvers", "core", "utils"]
+packages = ["LeftOvers", "LeftOvers.core", "LeftOvers.utils"]
