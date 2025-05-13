@@ -51,10 +51,10 @@ class ScanResult:
 
     def check_ignored_content_type(self) -> bool:
         """
-        Verifica se o tipo de conteúdo está na lista de tipos ignorados.
+        Check if the content type is in the list of ignored types.
         
         Returns:
-            bool: True se o tipo de conteúdo deve ser ignorado
+            bool: True if content type should be ignored
         """
         if not IGNORE_CONTENT:
             return False

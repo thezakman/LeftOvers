@@ -1,156 +1,182 @@
 """
-Utilities for debugging LeftOvers scanner.
+Debug utilities for the LeftOvers scanner.
 """
 
-import os
-import urllib.parse
 import sys
-from typing import List, Tuple, Any
+import re
+import urllib.parse
+from typing import List, Dict, Any, Optional
+
+from utils.http_utils import parse_url
+from utils.logger import logger
 
 def debug_url_segments(url: str) -> None:
     """
-    Analyzes a URL and prints detailed information about its segments for debugging.
-    """
-    print(f"\n[DEBUG] Analyzing URL: {url}")
+    Debug all segments in a URL path.
     
+    Args:
+        url: URL to debug
+    """
     parsed = urllib.parse.urlparse(url)
-    print(f"[DEBUG] Scheme: {parsed.scheme}")
-    print(f"[DEBUG] Netloc: {parsed.netloc}")
-    print(f"[DEBUG] Path: {parsed.path}")
-    
-    path = parsed.path.strip('/')
-    if not path:
-        print("[DEBUG] Empty path, no segments.")
-        return
-        
-    segments = path.split('/')
-    print(f"[DEBUG] Segments found: {len(segments)}")
-    
-    for i, segment in enumerate(segments, 1):
-        print(f"[DEBUG] Segment {i}: '{segment}'")
-
-def debug_test_urls(test_urls: List[Tuple[str, str]]) -> None:
-    """
-    Prints information about the URLs to be tested.
-    """
-    print("\n[DEBUG] URLs that will be tested:")
-    for base_url, test_type in test_urls:
-        parsed = urllib.parse.urlparse(base_url)
-        path = parsed.path
-        print(f"[DEBUG] Type: {test_type}, URL: {base_url}")
-        
-        if test_type.startswith("Segment") and path:
-            path_clean = path.strip('/')
-            if path_clean:
-                segments = path_clean.split('/')
-                segment_num = int(test_type.split(' ')[-1])
-                if segment_num <= len(segments):
-                    print(f"[DEBUG]   Segment {segment_num}: '{segments[segment_num-1]}'")
-                else:
-                    print(f"[DEBUG]   Segment {segment_num}: Does not exist (total: {len(segments)})")
-
-def debug_segment_display(base_url: str, segment_num: int) -> None:
-    """
-    Specific function to debug segment display.
-    """
-    print(f"\n[DEBUG-SEGMENT] Analyzing segment {segment_num} of URL: {base_url}")
-    
-    parsed = urllib.parse.urlparse(base_url)
     path = parsed.path.strip('/')
     
-    if not path:
-        print("[DEBUG-SEGMENT] Empty path, no segments.")
-        return
-    
-    segments = path.split('/')
-    print(f"[DEBUG-SEGMENT] Segments found: {len(segments)}")
-    print(f"[DEBUG-SEGMENT] List of segments: {segments}")
-    
-    if 1 <= segment_num <= len(segments):
-        print(f"[DEBUG-SEGMENT] Segment {segment_num}: '{segments[segment_num-1]}'")
-    else:
-        print(f"[DEBUG-SEGMENT] Segment {segment_num} does not exist (total: {len(segments)})")
-
-def debug_segment_url(url: str, test_type: str) -> None:
-    """
-    Analyzes a specific URL for a test type and extracts segment information.
-    """
-    print(f"\n[DEBUG-SEGMENT-URL] Analyzing URL for {test_type}: {url}")
-    
-    if not test_type.startswith("Segment"):
-        print(f"[DEBUG-SEGMENT-URL] Test type '{test_type}' is not a segment. Ignoring.")
-        return
-    
-    try:
-        segment_num = int(test_type.split(' ')[-1])
-        
-        parsed = urllib.parse.urlparse(url)
-        path = parsed.path.strip('/')
-        
-        if not path:
-            print("[DEBUG-SEGMENT-URL] Empty path, no segments to analyze.")
-            return
-        
+    if path and path != "/":
         segments = path.split('/')
-        print(f"[DEBUG-SEGMENT-URL] Total number of segments: {len(segments)}")
-        print(f"[DEBUG-SEGMENT-URL] Complete list of segments: {segments}")
+        logger.debug(f"URL {url} has {len(segments)} path segments:")
         
-        if 1 <= segment_num <= len(segments):
-            segment = segments[segment_num - 1]
-            print(f"[DEBUG-SEGMENT-URL] Segment {segment_num} is: '{segment}'")
-        else:
-            print(f"[DEBUG-SEGMENT-URL] Segment {segment_num} does not exist. Total segments: {len(segments)}")
+        for i, segment in enumerate(segments):
+            logger.debug(f"  Segment {i+1}: '{segment}'")
+            
+        # Test base URL as well
+        base_url = f"{parsed.scheme}://{parsed.netloc}"
+        logger.debug(f"Base URL: {base_url}")
+    else:
+        logger.debug(f"URL {url} has no path segments")
+
+def debug_segment_display(url: str, segment_num: int) -> None:
+    """
+    Debug the display of a specific segment in a URL.
     
-    except Exception as e:
-        print(f"[DEBUG-SEGMENT-URL] Error in segment analysis: {str(e)}")
+    Args:
+        url: URL to debug
+        segment_num: Segment number to display (1-based)
+    """
+    parsed = urllib.parse.urlparse(url)
+    path = parsed.path.strip('/')
+    
+    if not path:
+        logger.debug(f"URL {url} has no path segments")
+        return
+        
+    segments = path.split('/')
+    
+    if segment_num < 1 or segment_num > len(segments):
+        logger.debug(f"Segment {segment_num} is out of range. URL has {len(segments)} segments")
+        return
+        
+    segment = segments[segment_num - 1]
+    logger.debug(f"Segment {segment_num} of {url}: '{segment}'")
+    
+    # Test URL for this segment
+    base_url = f"{parsed.scheme}://{parsed.netloc}"
+    test_url = f"{base_url}/{segment}"
+    
+    logger.debug(f"Test URL for segment {segment_num}: {test_url}")
 
 def debug_brute_force_path(url: str, test_type: str) -> None:
     """
-    Shows clearly in which path a brute force test is being executed.
+    Debug brute force path tests - optimized version.
     
     Args:
-        url: The URL being tested
-        test_type: The type of test being performed
+        url: URL being tested
+        test_type: Type of test being performed
     """
-    print(f"\n[DEBUG-BRUTE] Analyzing brute force URL: {url}")
+    parsed = urllib.parse.urlparse(url)
+    path = parsed.path.strip('/')
     
-    # Check if this is indeed a brute force test
-    if not (test_type.startswith("Brute Force:") or test_type.startswith("Brute Force Recursive:")):
-        print(f"[DEBUG-BRUTE] Test type '{test_type}' is not a brute force test. Ignoring.")
+    if not path:
+        logger.debug(f"Brute force URL {url} has no path")
         return
     
-    try:
-        parsed = urllib.parse.urlparse(url)
-        path = parsed.path.strip('/')
-        
-        # Extract the word being tested
-        word = test_type.split(": ")[1] if ": " in test_type else "[unknown]"
-        
-        if not path or path == word:
-            print(f"[DEBUG-BRUTE] Testing '{word}' at ROOT domain")
-            print(f"[DEBUG-BRUTE] Full URL: {parsed.scheme}://{parsed.netloc}/{word}")
-            return
-            
-        # Split path into segments
-        segments = path.split('/')
-        
-        # If the last segment is our test word, remove it to get the parent path
-        if segments and segments[-1] == word:
-            parent_path = '/'.join(segments[:-1])
-            print(f"[DEBUG-BRUTE] Testing '{word}' at path: /{parent_path}")
-            print(f"[DEBUG-BRUTE] Full path being tested: /{parent_path}/{word}")
-        else:
-            print(f"[DEBUG-BRUTE] Testing '{word}' at path: /{path}")
-            print(f"[DEBUG-BRUTE] Full URL: {parsed.scheme}://{parsed.netloc}/{path}/{word}")
+    # Efficient extraction of the test word using partition
+    word = ""
+    if ": " in test_type:
+        _, _, word = test_type.partition(": ")
     
-    except Exception as e:
-        print(f"[DEBUG-BRUTE] Error in brute force path analysis: {str(e)}")
+    # Efficiently split the path
+    segments = path.split('/')
+    
+    # Use startswith instead of full string comparison for faster check
+    if test_type.startswith("Brute Force Recursive:"):
+        # For recursive tests, the word is the last segment
+        parent_path = "/".join(segments[:-1]) if len(segments) > 1 else ""
+        logger.debug(f"Recursive brute force: Testing '{word}' at /{parent_path}")
+        
+        # Add path pattern analysis to help with problem detection
+        if parent_path:
+            depth = len(parent_path.split('/'))
+            logger.debug(f"Path depth: {depth} levels deep")
+    else:
+        # For regular brute force, the path is the parent and we append the word
+        if word and word in segments:
+            # Optimization: use list index instead of loop
+            word_index = segments.index(word)
+            parent_path = "/".join(segments[:word_index])
+            logger.debug(f"Brute force: Testing '{word}' at /{parent_path}")
+            
+            # Additional helpful debugging information
+            remaining_path = "/".join(segments[word_index+1:])
+            if remaining_path:
+                logger.debug(f"Path continuation after test point: /{remaining_path}")
+        else:
+            logger.debug(f"Brute force: Testing at path /{path}")
+            
+            # Check if the path appears to be an API or dynamic resource
+            if any(segment.isdigit() for segment in segments):
+                logger.debug("Warning: Path contains numeric segments, might be dynamic content")
+            if any(segment.lower() in ('api', 'rest', 'graphql', 'gql', 'v1', 'v2', 'v3') for segment in segments):
+                logger.debug("Note: Path appears to be an API endpoint")
+
+def debug_http_request(url: str, headers: Dict[str, str], method: str = "GET") -> None:
+    """
+    Debug HTTP request details.
+    
+    Args:
+        url: URL being requested
+        headers: HTTP headers
+        method: HTTP method
+    """
+    logger.debug(f"HTTP {method} Request: {url}")
+    logger.debug("Headers:")
+    for name, value in headers.items():
+        logger.debug(f"  {name}: {value}")
+
+def debug_http_response(status_code: int, content_type: str, content_length: int, 
+                        elapsed_time: float, headers: Dict[str, str]) -> None:
+    """
+    Debug HTTP response details.
+    
+    Args:
+        status_code: HTTP status code
+        content_type: Content-Type header
+        content_length: Content length in bytes
+        elapsed_time: Time taken in seconds
+        headers: Response headers
+    """
+    logger.debug(f"Response: HTTP {status_code}")
+    logger.debug(f"Content-Type: {content_type}")
+    logger.debug(f"Content-Length: {content_length} bytes")
+    logger.debug(f"Time: {elapsed_time:.3f} seconds")
+    
+    # Log specific important headers
+    important_headers = ["Server", "X-Powered-By", "X-Generator", "X-Content-Type-Options", 
+                        "X-Frame-Options", "X-XSS-Protection", "Content-Security-Policy"]
+                        
+    for header in important_headers:
+        if header.lower() in [h.lower() for h in headers.keys()]:
+            for h, v in headers.items():
+                if h.lower() == header.lower():
+                    logger.debug(f"Header {h}: {v}")
+
+def debug_false_positive_check(url: str, is_false_positive: bool, reason: str) -> None:
+    """
+    Debug false positive detection.
+    
+    Args:
+        url: URL being checked
+        is_false_positive: Whether it's a false positive
+        reason: Reason for false positive determination
+    """
+    if is_false_positive:
+        logger.debug(f"False positive detected for {url}: {reason}")
+    else:
+        logger.debug(f"Potential finding: {url} (not a false positive)")
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python debug_utils.py URL [segment_number]")
+        print("Usage: python debug_utils.py URL [SEGMENT_NUM]")
         sys.exit(1)
-    
+        
     url = sys.argv[1]
     debug_url_segments(url)
     

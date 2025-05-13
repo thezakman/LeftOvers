@@ -82,6 +82,7 @@ def parse_arguments():
         default=[], 
         help='Ignore results with specific content types (e.g., "text/html"). Can be used multiple times.'
     )
+    parser.add_argument("--no-fp", action="store_true", help="Disable false positive detection (show all results)")
     
     # Boolean flags
     parser.add_argument("-nc", "--no-color", action="store_true", help="Disable colors in output")
@@ -100,6 +101,11 @@ def configure_scanner_from_args(args):
     
     # Configure color usage
     use_color = not (args.no_color or os.environ.get("NO_COLOR"))
+    
+    # Update global VERBOSE setting for HTTP request logging
+    if args.verbose:
+        import app_settings
+        app_settings.VERBOSE = True
     
     # Configure extensions
     extensions = None
@@ -149,6 +155,7 @@ def configure_scanner_from_args(args):
         rotate_user_agent=args.rotate_agents,
         test_index=args.test_index,
         ignore_content=args.ignore_content,
+        disable_fp=args.no_fp
     )
             
     # Add brute force capability if requested
@@ -182,6 +189,7 @@ def main():
     
     try:
         args = parse_arguments()
+        
         scanner = configure_scanner_from_args(args)
         
         # Let the scanner class display the banner and information panel

@@ -70,11 +70,15 @@ VERSION_CONTROL_EXTENSIONS = [
 
 DOCUMENT_EXTENSIONS = [
     "doc", "docx", "xls", "xlsx", "ppt", "pptx", "pdf",
-    "rtf", "md", "odt", "ods", "odp",
+    "rtf", "odt", "ods", "odp",
 ]
 
 MISC_EXTENSIONS = [
-    "exe.bak", "dll.bak", "bin.bak", "img", "iso"
+    "exe.bak", "dll.bak", "bin.bak", "img", "iso", "dat", "dcm", "key", 
+    "pem", "crt", "cert", "p12", "pfx", "jks", "keystore", "csr", 
+    "htpasswd", "passwd", "shadow", "pwd", "secret", "credentials",
+    "aws", "env.local", "env.dev", "env.prod", "env.test", 
+    "toml", "lock.json", "yarn.lock", "package-lock.json", "composer.lock"
 ]
 
 # Create the final DEFAULT_EXTENSIONS list from all categories
@@ -91,95 +95,110 @@ DEFAULT_EXTENSIONS = [
     *MISC_EXTENSIONS,
 ]
 
-# ─── Default list of common backup words/directories to test ───────────────────
-
-# Organize backup words by categories
 DEFAULT_FILES_WORDS = [
-    "readme", "README", "composer", "package", "debug", "test",
-    "logging", "trace", "ws", "swagger", "contents", "content",
-    "assets",
+    "README", "assets", "composer", "content", "contents", "debug", "logging",
+    "package", "readme", "service", "service1", "swagger", "test", "trace", "ws"
 ]
 
 BACKUP_DIRECTORY_WORDS = [
-    "anterior", "antigo", "archive", "archived", "archives", "atual",
-    "back", "backup", "bkp", "copia", "copy", "deletar", "dev",
-    "devel", "development", "guardar", "hml", "historical", "history",
-    "homolog", "homologacao", "latest", "lixo", "log", "logs",
-    "new", "novo", "old", "old_version", "orig", "original", "prd",
-    "prod", "production", "rascunho", "release", "reserva", "salvo",
-    "seguranca", "stable", "staging", "temp", "temporario", "tmp",
-    "versao", "producao",
+    "anterior", "antigo", "archive", "archived", "archives", "atual", "back",
+    "backup", "bkp", "copy", "copia", "current", "deletar", "delete", "dev",
+    "devel", "development", "draft", "guardar", "historical", "history", "hml",
+    "homolog", "homologacao", "homologation", "latest", "lixo", "log", "logs",
+    "new", "novo", "old", "old_version", "orig", "original", "prd", "prod",
+    "producao", "production", "rascunho", "release", "reserva", "salvo", "save",
+    "saved", "security", "seguranca", "stable", "staging", "temp", "temporario",
+    "temporary", "tmp", "trash", "version", "versao"
 ]
 
 WEB_RELATED_WORDS = [
-    "backend", "conteudo", "deploy", "frontend", "htdocs", "html",
-    "httpdocs", "inetpub", "pagina", "portal", "public", "public_html",
-    "publicacao", "site", "sistema", "static", "web", "webpage",
-    "webroot", "website", "www", "www-data", "hospedagem",
+    "backend", "conteudo", "deploy", "frontend", "hosting", "hospedagem",
+    "htdocs", "html", "httpdocs", "inetpub", "page", "pagina", "portal",
+    "public", "public_html", "publication", "publicacao", "site", "sistema",
+    "static", "system", "web", "webpage", "webroot", "website", "www", "www-data"
 ]
 
 VERSION_CONTROL_WORDS = [
-    ".git", ".svn", "bk", "cvs", "git", "hg", "svn",
+    ".git", ".svn", "bk", "cvs", "git", "hg", "svn"
 ]
 
 DATE_VERSION_WORDS = [
-    "1.0", "2.0", "2020", "2021", "2022", "2023", "2024", "2025",
-    "apr", "aug", "dec", "feb", "jan", "jul", "jun", "mar",
-    "may", "nov", "oct", "sep", "v1", "v2", "v3",
-    "abril", "agosto", "dezembro", "fevereiro", "janeiro", "julho",
-    "junho", "maio", "marco", "novembro", "outubro", "setembro",
+    "1.0", "2.0", "2020", "2021", "2022", "2023", "2024", "2025", "abr", "abril",
+    "ago", "agosto", "apr", "april", "aug", "august", "dec", "december", "dez",
+    "dezembro", "feb", "february", "fev", "fevereiro", "jan", "janeiro", "jul",
+    "july", "jun", "junho", "june", "mai", "maio", "mar", "march", "marco", "may",
+    "nov", "november", "novembro", "oct", "october", "out", "outubro", "sep",
+    "september", "set", "setembro", "v1", "v2", "v3"
 ]
 
 PTBR_COMMON_WORDS = [
-    "acesso", "ajuda", "api", "aplicacao", "aplicativo", "aprovado",
-    "configuracao", "dados", "desenvolvedor", "documentacao",
-    "emergencia", "importante", "informacao", "interno",
-    "manutencao", "pendente", "privado", "projeto",
-    "recuperacao", "restrito", "secreto", "segredo", "senha",
-    "servico", "servidor", "suporte", "teste", "usuario",
-    "webservice", "webservices", "revisado",
+    "acesso", "ajuda", "api", "aplicacao", "aplicativo", "aprovado", "configuracao",
+    "dados", "desenvolvedor", "documentacao", "emergencia", "importante",
+    "informacao", "interno", "manutencao", "pendente", "privado", "projeto",
+    "recuperacao", "restrito", "revisado", "secreto", "segredo", "senha",
+    "servico", "servidor", "suporte", "teste", "usuario", "webservice", "webservices"
+]
+
+EN_COMMON_WORDS = [
+    "access", "account", "accounting", "action", "actions", "activity", "activities",
+    "admin", "administrative", "app", "application", "approved", "attachment",
+    "authentication", "balance", "billing", "board", "bookkeeping", "box", "branch",
+    "budget", "candidate", "certificate", "client", "compliance", "company",
+    "configuration", "conf", "config", "contract", "corporate", "credit", "data",
+    "database", "db", "debit", "default", "department", "developer", "digitize",
+    "dist", "documentation", "download", "dump", "election", "electoral", "email",
+    "emergency", "encryption", "entity", "expense", "export", "financial", "fiscal",
+    "firewall", "flow", "form", "foundation", "government", "group", "guide",
+    "guidelines", "guides", "help", "hidden", "hiring", "id", "important", "import",
+    "income", "information", "input", "install", "institutional", "internal",
+    "inventory", "intranet", "loss", "mail", "maintenance", "management", "manual",
+    "manuals", "memo", "message", "ministry", "model", "network", "nfe", "nfse",
+    "norm", "normative", "norms", "note", "notice", "organization", "ordinance",
+    "output", "password", "payable", "payment", "pending", "planning", "policy",
+    "prefecture", "private", "printing", "printer", "process", "product", "program",
+    "programs", "project", "proposal", "proposals", "protocol", "proxy", "purchase",
+    "queue", "receivable", "record", "recovery", "register", "registration",
+    "regulated", "regulation", "regulatory", "report", "reports", "research",
+    "resolution", "restricted", "result", "reviewed", "sale", "sales", "scanner",
+    "secret", "secretary", "sent", "server", "service", "settings", "setup",
+    "society", "statement", "strategy", "strategic", "supplier", "support", "tax",
+    "test", "token", "transaction", "unit", "upload", "uploads", "user", "vpn"
 ]
 
 PTBR_BUSINESS_WORDS = [
-    "admin", "administrativo", "balanco", "boleto", "cadastro",
-    "carteira", "cliente", "cobranca", "comercial", "compra",
-    "contabil", "contabilidade", "credito", "debito", "despesa",
-    "diretoria", "estoque", "extrato", "fatura", "financeiro",
-    "fiscal", "fluxo", "formulario", "fornecedor", "gerencia",
-    "investimento", "lucro", "nfe", "nfse", "orcamento", "pagar",
-    "pagamento", "pesquisa", "prejuizo", "produto", "receber",
-    "receita", "registro", "relatorio", "relatorios", "resultado",
-    "transacao", "venda", "vendas",
+    "admin", "administrativo", "balanco", "boleto", "cadastro", "carteira",
+    "cliente", "cobranca", "comercial", "compra", "contabil", "contabilidade",
+    "credito", "debito", "despesa", "diretoria", "estoque", "extrato", "fatura",
+    "financeiro", "fiscal", "fluxo", "formulario", "fornecedor", "gerencia",
+    "investimento", "lucro", "nfe", "nfse", "orcamento", "pagar", "pagamento",
+    "pesquisa", "prejuizo", "produto", "receber", "receita", "registro",
+    "relatorio", "relatorios", "resultado", "transacao", "venda", "vendas"
 ]
 
 PTBR_CORPORATE_WORDS = [
-    "acao", "acoes", "atividade", "atividades", "associacao",
-    "auditoria", "candidato", "cnpj", "comite", "compliance",
-    "conselho", "concurso", "conta", "contrato", "contratacao",
-    "corporativo", "cpf", "departamento", "diretrizes", "edital",
-    "eleicao", "eleitoral", "empresa", "entidade", "estrategia",
-    "estrategico", "filial", "fundacao", "gestao", "governo",
-    "grupo", "guias", "guia", "imposto", "institucional",
-    "inscricao", "licitacao", "manual", "manuals", "memorando",
-    "ministerio", "norma", "normas", "normativo", "nota",
-    "organizacao", "planejamento", "politica", "portaria",
-    "prefeitura", "processo", "programa", "programas", "propostas",
-    "proposta", "protocolo", "regulamento", "regulamentacao", "resolucao",
-    "rg", "sede", "secretaria", "sociedade", "unidade",
+    "acao", "acoes", "associacao", "atividade", "atividades", "auditoria",
+    "candidato", "cnpj", "comite", "compliance", "concurso", "conselho", "conta",
+    "contratacao", "contrato", "corporativo", "cpf", "departamento", "diretrizes",
+    "edital", "eleicao", "eleitoral", "empresa", "entidade", "estrategia",
+    "estrategico", "filial", "fundacao", "gestao", "governo", "grupo", "guia",
+    "guias", "imposto", "institucional", "inscricao", "licitacao", "manual",
+    "manuals", "memorando", "ministerio", "norma", "normas", "normativo", "nota",
+    "organizacao", "planejamento", "politica", "portaria", "prefeitura", "processo",
+    "programa", "programas", "proposta", "propostas", "protocolo", "regulamento",
+    "regulamentacao", "resolucao", "rg", "sede", "secretaria", "sociedade", "unidade"
 ]
 
 PTBR_TECHNICAL_WORDS = [
-    "anexo", "autenticacao", "caixa", "certificado", "correio",
-    "criptografia", "digitalizar", "download", "email", "entrada",
-    "enviado", "extranet", "fila", "firewall", "impressao",
-    "impressora", "intranet", "mensagem", "proxy", "rede", "saida",
-    "scanner", "token", "upload", "uploads", "vpn",
+    "anexo", "autenticacao", "caixa", "certificado", "correio", "criptografia",
+    "digitalizar", "download", "email", "entrada", "enviado", "extranet", "fila",
+    "firewall", "impressao", "impressora", "intranet", "mensagem", "proxy", "rede",
+    "saida", "scanner", "token", "upload", "uploads", "vpn"
 ]
 
 DATABASE_CONFIG_WORDS = [
-    "config", "conf", "data", "database", "db", "dist", "dump",
-    "exportacao", "hidden", "importacao", "install", "internal",
-    "modelo", "padrao", "private", "secret", "settings", "setup"
+    "conf", "config", "data", "database", "db", "dist", "dump", "exportacao",
+    "hidden", "importacao", "install", "internal", "modelo", "padrao", "private",
+    "settings", "setup"
 ]
 
 # Create the final DEFAULT_BACKUP_WORDS list from all categories
@@ -189,6 +208,7 @@ DEFAULT_BACKUP_WORDS = [
     *WEB_RELATED_WORDS,
     *VERSION_CONTROL_WORDS,
     *DATE_VERSION_WORDS,
+    *EN_COMMON_WORDS,
     *PTBR_COMMON_WORDS,
     *PTBR_BUSINESS_WORDS,
     *PTBR_CORPORATE_WORDS,

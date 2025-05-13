@@ -6,7 +6,7 @@ control artifacts, and sensitive files that may have been accidentally
 left on web servers.
 """
 
-from app_settings import VERSION
+from .app_settings import VERSION
 
 __version__ = VERSION
 __author__ = "TheZakMan"

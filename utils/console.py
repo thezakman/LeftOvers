@@ -9,6 +9,7 @@ from rich.progress import (
     Progress, SpinnerColumn, TextColumn, BarColumn, 
     TaskProgressColumn, TimeElapsedColumn, TimeRemainingColumn
 )
+from rich import box
 
 # Initialize Rich console
 console = Console()
@@ -33,7 +34,7 @@ def print_banner(use_color=True, silent=False):
 
 def print_info_panel(text: str, use_color: bool = True, backup_words_count: int = None):
     """Print an info panel with the given text."""
-    # Adicionar informação sobre backup words se disponível
+    # Add backup words count information if available
     full_text = text
     if backup_words_count is not None and backup_words_count > 0:
         full_text += f" | Words: {backup_words_count}"
@@ -70,49 +71,139 @@ def print_results_table(results, use_color=True, max_size_mb=50):
     if not results:
         return
 
-    table = Table(title="Scan Results")
-    table.add_column("URL", style="cyan")
-    table.add_column("Status", style="magenta")
-    table.add_column("Size", style="green")
-    table.add_column("Type", style="blue")
-    table.add_column("Notes", style="yellow")
+    table = Table(title="Scan Results", box=box.ROUNDED, show_header=True, header_style="bold")
+    table.add_column("URL", style="cyan" if use_color else "", no_wrap=False, max_width=80)
+    table.add_column("Status", style="magenta" if use_color else "", width=8, justify="center")
+    table.add_column("Size", style="green" if use_color else "", width=10, justify="right")
+    table.add_column("Type", style="blue" if use_color else "", width=24)
+    table.add_column("Notes", style="yellow" if use_color else "")
 
     for result in results:
-        status_style = ""
-        status_code = result.get("Status", 0)
-        file_size = result.get("Tamanho", "")
+        # Verifica se estamos lidando com um dicionário ou um objeto ScanResult
+        is_dict = isinstance(result, dict)
+        
+        status_code = result.get("status_code", 0) if is_dict else result.status_code
+        
+        # Processar o tamanho do arquivo com função formatadora para melhor legibilidade
+        if is_dict:
+            file_size = result.get("content_length", 0)
+        else:
+            file_size = result.content_length if hasattr(result, "content_length") else 0
+        
+        # Formatação do tamanho do arquivo com função auxiliar
+        file_size_str = _format_file_size(file_size)
+            
+        # Verifica notas adicionais
         notes = ""
         
-        # Check if this is a large file
-        if "MB" in file_size:
-            try:
-                size_value = float(file_size.replace("MB", "").strip())
-                if size_value > max_size_mb:
-                    notes = "Large file detected!"
-            except ValueError:
-                pass
-        
-        if use_color:
-            if status_code == 200:
-                status_style = "[green]"
-            elif status_code in [401, 403]:
-                status_style = "[yellow]"
-            elif status_code >= 400:
-                status_style = "[red]"
+        # Verifica se é um arquivo grande
+        is_large_file = False
+        if file_size > max_size_mb * 1024 * 1024:
+            notes = "Large file detected!"
+            is_large_file = True
                 
-            status_text = f"{status_style}{status_code}[/]" if status_style else str(status_code)
+        # Verifica falsos positivos
+        if hasattr(result, "false_positive") and result.false_positive:
+            if notes:
+                notes += " | "
+            notes += f"False positive: {result.false_positive_reason if hasattr(result, 'false_positive_reason') else 'Yes'}"
+        
+        # Formatação do status code com cores
+        if use_color:
+            status_text = _format_status_with_color(status_code)
         else:
             status_text = str(status_code)
+        
+        # Obter URL e tipo de conteúdo
+        url = result.get("url", "") if is_dict else (result.url if hasattr(result, "url") else "")
+        content_type = result.get("content_type", "") if is_dict else (result.content_type if hasattr(result, "content_type") else "")
+        
+        # Simplificar o tipo de conteúdo para exibição
+        content_type = _format_content_type(content_type)
+        
+        # Truncar URL se for muito longo
+        if len(url) > 80:
+            url = url[:77] + "..."
+            
+        # Aplicar estilo especial para arquivos grandes ou falsos positivos
+        url_style = ""
+        if is_large_file and use_color:
+            url_style = "dim cyan"
+        elif hasattr(result, "false_positive") and result.false_positive and use_color:
+            url_style = "dim cyan"
             
         table.add_row(
-            result.get("URL", ""),
+            f"[{url_style}]{url}[/{url_style}]" if url_style else url,
             status_text,
-            file_size,
-            result.get("Tipo", ""),
+            file_size_str,
+            content_type,
             notes
         )
 
     console.print(table)
+
+def _format_file_size(size_bytes):
+    """
+    Format a size in bytes to a human-readable string.
+    
+    Args:
+        size_bytes: Size in bytes
+        
+    Returns:
+        Formatted size string (e.g., "2.5 KB", "1.2 MB")
+    """
+    if size_bytes is None or size_bytes == 0:
+        return "0 B"
+        
+    units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
+    
+    unit = 0
+    while size_bytes >= 1024 and unit < len(units) - 1:
+        size_bytes /= 1024.0
+        unit += 1
+    
+    if unit == 0:  # bytes
+        return f"{int(size_bytes)} {units[unit]}"
+    else:
+        return f"{size_bytes:.1f} {units[unit]}"
+
+def _format_status_with_color(status_code):
+    """Helper function to format status code with appropriate color."""
+    if status_code == 200:
+        status_style = "green"
+    elif status_code in [401, 403]:
+        status_style = "yellow"
+    elif status_code >= 400:
+        status_style = "red"
+    else:
+        status_style = "blue"
+        
+    return f"[{status_style}]{status_code}[/{status_style}]"
+
+def _format_content_type(content_type):
+    """Helper function to format and simplify content type strings."""
+    if not content_type:
+        return "Unknown"
+        
+    # Remove parameters like charset
+    if ";" in content_type:
+        content_type = content_type.split(";")[0].strip()
+        
+    # Abbreviate common types for cleaner display
+    common_types = {
+        "text/html": "HTML",
+        "text/plain": "Text",
+        "application/json": "JSON",
+        "application/xml": "XML",
+        "application/javascript": "JavaScript",
+        "text/css": "CSS",
+        "application/pdf": "PDF",
+        "image/jpeg": "JPEG",
+        "image/png": "PNG",
+        "image/gif": "GIF"
+    }
+    
+    return common_types.get(content_type, content_type)
 
 def print_summary(found_count, total_count, use_color=True):
     """Print a summary of the scan."""
@@ -129,9 +220,12 @@ def print_summary(found_count, total_count, use_color=True):
 
 def format_and_print_result(console, result, use_color=True, verbose=False, silent=False, max_size_mb=50):
     """Format and print a result with colors according to HTTP status."""
-    if not result:
+    if not result or silent:
         return
         
+    # Import SUCCESS_STATUSES only when needed to avoid circular imports
+    from app_settings import SUCCESS_STATUSES
+    
     # Get file size in MB (if available)
     file_size_mb = None
     if hasattr(result, 'content_length') and result.content_length:
@@ -139,21 +233,26 @@ def format_and_print_result(console, result, use_color=True, verbose=False, sile
         
     large_file = file_size_mb and file_size_mb > max_size_mb
     
-    details = f"(TYPE: {result.content_type}, SIZE: "
+    # Build the details part of the output
+    details = f"(TYPE: {result.content_type.split(';')[0]}, SIZE: "
     
     # Format size with warning for large files
     if large_file and use_color:
         details += f"[bold yellow]{file_size_mb:.2f}MB[/bold yellow]"
     elif hasattr(result, 'content_length'):
-        details += f"{result.content_length:,} bytes" if result.content_length else "Unknown"
+        if result.content_length > 1024 * 1024:
+            details += f"{file_size_mb:.2f}MB"
+        else:
+            details += f"{result.content_length:,} bytes"
     else:
         details += "Unknown"
         
     details += f", TIME: {result.response_time:.2f}s, STATUS: "
     
     if use_color:
-        if result.status_code == 200:
-            status_style = "green"
+        # Determine the appropriate style based on status code
+        if result.status_code in SUCCESS_STATUSES:
+            status_style = "bold green"  # Bold green for successful responses
         elif result.status_code in (401, 403):
             status_style = "yellow"
         elif result.status_code >= 400:
@@ -164,38 +263,60 @@ def format_and_print_result(console, result, use_color=True, verbose=False, sile
         details += f"[{status_style}]{result.status_code}[/{status_style}])"
         
         # Add false positive indicator if applicable
-        if result.false_positive:
-            details += f" [dim red][FP: {result.false_positive_reason}][/dim red]"
+        if hasattr(result, 'false_positive') and result.false_positive:
+            # Use different styling based on status - success codes are important even when marked as FP
+            if result.status_code in SUCCESS_STATUSES:
+                details += f" [yellow][Possible FP: {result.false_positive_reason}][/yellow]"
+            else:
+                details += f" [dim red][FP: {result.false_positive_reason}][/dim red]"
             
         # Add large file warning
         if large_file:
             details += " [bold yellow][LARGE FILE - Partial scan only][/bold yellow]"
+        
+        # Add partial content indicator for 206 responses
+        if result.status_code == 206:
+            details += " [cyan][Partial Content][/cyan]"
 
         line = f"{result.url} {details}"
         
         if result.status_code == 404:
             if verbose:
                 console.print(f"[dim]{line}[/dim]")
-        elif result.false_positive and result.status_code != 200:
+        elif hasattr(result, 'false_positive') and result.false_positive and result.status_code not in SUCCESS_STATUSES:
             if verbose:
                 console.print(f"[dim yellow]{line}[/dim yellow]")
         else:
-            if result.status_code == 200:
+            if result.status_code in SUCCESS_STATUSES:
                 console.print(f"[bold green]{line}[/bold green]")
+            elif result.status_code == 403:
+                console.print(f"[bold yellow]{line}[/bold yellow]")
             else:
                 console.print(line)
     else:
+        # Non-color mode
         details += f"{result.status_code})"
-        if result.false_positive:
-            details += f" [FP: {result.false_positive_reason}]"
+        
+        # Add false positive indicator if applicable (non-color mode)
+        if hasattr(result, 'false_positive') and result.false_positive:
+            if result.status_code in SUCCESS_STATUSES:
+                details += f" [POSSIBLE FP: {result.false_positive_reason}]"
+            else:
+                details += f" [FP: {result.false_positive_reason}]"
             
         # Add large file warning in non-color mode
         if large_file:
             details += " [LARGE FILE - Partial scan only]"
             
+        # Add partial content indicator for 206 responses
+        if result.status_code == 206:
+            details += " [Partial Content]"
+            
         line = f"{result.url} {details}"
+        
+        # Only print relevant results in non-color mode
         if result.status_code != 404 or verbose:
-            if not result.false_positive or result.status_code == 200 or verbose:
+            if not hasattr(result, 'false_positive') or not result.false_positive or result.status_code in SUCCESS_STATUSES or verbose:
                 print(line)
 
 def print_large_file_skipped(url, size_mb, max_size_mb, use_color=True):
@@ -233,5 +354,5 @@ def create_url_list_progress(total: int, use_color: bool = True):
         TimeRemainingColumn(),
         console=console if use_color else None
     )
-    task_id = progress.add_task("[cyan]Processando URLs...", total=total)
+    task_id = progress.add_task("[cyan]Processing URLs...", total=total)
     return progress, task_id

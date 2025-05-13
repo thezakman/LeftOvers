@@ -1,162 +1,267 @@
 """
-HTTP handling utilities for LeftOvers with optimizations for large files.
+Enhanced HTTP request handler for LeftOvers.
 """
 
 import time
+import random
+from typing import Dict, Any, Optional, Union
 import requests
-from requests.exceptions import RequestException
-from urllib.parse import urlparse
-from .console import print_large_file_skipped, console
-# Import default config
-from ..config import MAX_FILE_SIZE_MB, CHUNK_SIZE, DEFAULT_TIMEOUT, DEFAULT_USER_AGENT, VERIFY_SSL, FOLLOW_REDIRECTS
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+from urllib3.exceptions import InsecureRequestWarning
 
-class ScanResult:
-    """Class to store HTTP scan results."""
-    def __init__(self, url, status_code, content_type=None, content_length=None, response_time=0):
-        self.url = url
-        self.status_code = status_code
-        self.content_type = content_type or 'unknown'
-        self.content_length = content_length
-        self.response_time = response_time
-        self.false_positive = False
-        self.false_positive_reason = None
-        self.is_large_file = False
-        self.partial_download = False
-        
-    def mark_as_false_positive(self, reason):
-        """Mark result as a false positive."""
-        self.false_positive = True
-        self.false_positive_reason = reason
+from app_settings import DEFAULT_TIMEOUT, USER_AGENTS, MAX_FILE_SIZE_MB
+from utils.logger import logger
 
-def check_url_with_size_limit(url, timeout=DEFAULT_TIMEOUT, user_agent=DEFAULT_USER_AGENT, 
-                             max_size_mb=MAX_FILE_SIZE_MB, verify_ssl=VERIFY_SSL, 
-                             use_color=True, follow_redirects=FOLLOW_REDIRECTS):
+class MemoryEfficientHttpHandler:
     """
-    Check a URL with protection against large files.
-    
-    This uses a two-phase approach:
-    1. First, send a HEAD request to check file size
-    2. If file is small enough, proceed with GET
-    3. If file is too large, only download the beginning for analysis
+    Memory efficient HTTP handler that manages connections and streaming responses.
     """
-    parsed_url = urlparse(url)
-    headers = {'User-Agent': user_agent} if user_agent else {}
-    max_size_bytes = max_size_mb * 1024 * 1024  # Convert MB to bytes
     
-    # Result placeholder
-    result = ScanResult(url=url, status_code=0)
+    def __init__(
+        self,
+        timeout: int = DEFAULT_TIMEOUT,
+        verify_ssl: bool = True,
+        headers: Dict[str, str] = None,
+        max_file_size_mb: int = MAX_FILE_SIZE_MB,
+        rotate_user_agent: bool = False,
+        verbose: bool = False
+    ):
+        """Initialize the HTTP handler with the given parameters."""
+        # Store configuration
+        self.timeout = timeout
+        self.verify_ssl = verify_ssl
+        self.headers = headers or {}
+        self.max_file_size_mb = max_file_size_mb
+        self.rotate_user_agent = rotate_user_agent
+        self.verbose = verbose
+        self.session = None
+        self.is_session_created = False
+        
+        # Suppress only the single InsecureRequestWarning
+        if not verify_ssl:
+            requests.packages.urllib3.disable_warnings(category=InsecureRequestWarning)
     
-    try:
-        # Phase 1: HEAD request to get headers without body
-        start_time = time.time()
-        head_response = requests.head(
-            url, 
-            headers=headers,
-            timeout=timeout,
-            verify=verify_ssl,
-            allow_redirects=follow_redirects
-        )
+    def _get_session(self) -> requests.Session:
+        """
+        Get or create an HTTP session with retry logic.
         
-        # Set initial status code 
-        result.status_code = head_response.status_code
-        
-        # Parse headers
-        content_length = head_response.headers.get('Content-Length')
-        if content_length:
-            try:
-                content_length = int(content_length)
-                result.content_length = content_length
-                result.is_large_file = content_length > max_size_bytes
-            except ValueError:
-                # If content length is not a valid integer
-                pass
-                
-        # Get content type
-        result.content_type = head_response.headers.get('Content-Type', 'unknown')
-        
-        # If content exists and response is successful
-        if head_response.status_code == 200:
-            # Phase 2: GET request with appropriate limiting
-            if result.is_large_file:
-                # For large files, only download a small portion
-                print_large_file_skipped(url, result.content_length / (1024 * 1024), max_size_mb, use_color)
-                
-                # Stream just the beginning of the file
-                with requests.get(
-                    url, 
-                    headers=headers, 
-                    timeout=timeout,
-                    verify=verify_ssl,
-                    allow_redirects=follow_redirects,
-                    stream=True
-                ) as response:
-                    # Just read the first chunk to confirm file exists and get accurate status
-                    chunk_size = min(CHUNK_SIZE, max_size_bytes // 100)  # Use config's CHUNK_SIZE
-                    next(response.iter_content(chunk_size=chunk_size), None)
-                    result.status_code = response.status_code
-                    result.partial_download = True
-            else:
-                # For reasonably sized files, download normally
-                response = requests.get(
-                    url, 
-                    headers=headers,
-                    timeout=timeout,
-                    verify=verify_ssl,
-                    allow_redirects=follow_redirects
-                )
-                result.status_code = response.status_code
-                
-                # Update content information from actual response
-                result.content_type = response.headers.get('Content-Type', result.content_type)
-                content_length = response.headers.get('Content-Length')
-                if content_length:
-                    try:
-                        result.content_length = int(content_length)
-                    except ValueError:
-                        pass
-                else:
-                    # If no Content-Length header, use the actual content length
-                    result.content_length = len(response.content)
-                
-                # Store content for further analysis if needed
-                # (This can be passed back if you need to analyze the content)
-                # result.content = response.content
-                
-        end_time = time.time()
-        result.response_time = end_time - start_time
-                
-    except RequestException as e:
-        result.status_code = 0
-        result.false_positive = True
-        result.false_positive_reason = f"Request error: {str(e)}"
-        
-    return result
-
-def check_multiple_urls(urls, timeout=DEFAULT_TIMEOUT, user_agent=DEFAULT_USER_AGENT, 
-                        max_size_mb=MAX_FILE_SIZE_MB, verify_ssl=VERIFY_SSL, 
-                        use_color=True, follow_redirects=FOLLOW_REDIRECTS,
-                        progress=None, task_id=None):
-    """
-    Check multiple URLs, updating progress if provided.
-    """
-    results = []
-    
-    for i, url in enumerate(urls):
-        # Update progress if available
-        if progress and task_id is not None:
-            progress.update(task_id, advance=1, description=f"[cyan]Scanning... ({i+1}/{len(urls)})")
+        Returns:
+            Configured requests session
+        """
+        # Create session only once to reuse connections
+        if not self.session:
+            self.session = requests.Session()
             
-        # Check the URL with size limiting
-        result = check_url_with_size_limit(
-            url, 
-            timeout=timeout,
-            user_agent=user_agent,
-            max_size_mb=max_size_mb,
-            verify_ssl=verify_ssl,
-            use_color=use_color,
-            follow_redirects=follow_redirects
-        )
+            # Configure retry strategy
+            retry_strategy = Retry(
+                total=2,  # Maximum number of retries
+                backoff_factor=0.5,  # Time factor between retries
+                status_forcelist=[429, 500, 502, 503, 504],  # Status codes to retry on
+                allowed_methods=["GET", "HEAD"]  # HTTP methods to retry
+            )
+            
+            # Apply retry strategy with connection pooling
+            adapter = HTTPAdapter(max_retries=retry_strategy, pool_connections=10, pool_maxsize=100)
+            self.session.mount("http://", adapter)
+            self.session.mount("https://", adapter)
+            
+            # Set default headers
+            self.session.headers.update(self.headers)
+            
+            self.is_session_created = True
+            
+        return self.session
+    
+    def get(
+        self, 
+        url: str, 
+        params: Dict[str, str] = None, 
+        headers: Dict[str, str] = None,
+        stream: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Perform a GET request with memory efficient streaming.
         
-        results.append(result)
+        Args:
+            url: The URL to request
+            params: URL parameters
+            headers: Additional headers to merge with default headers
+            stream: Whether to stream the response
+            
+        Returns:
+            Dictionary with request results
+        """
+        session = self._get_session()
+        combined_headers = self.headers.copy()
         
-    return results
+        # Rotate User-Agent if enabled
+        if self.rotate_user_agent and USER_AGENTS:
+            user_agent = random.choice(USER_AGENTS)
+            combined_headers["User-Agent"] = user_agent
+            
+        # Merge with request-specific headers
+        if headers:
+            combined_headers.update(headers)
+            
+        start_time = time.time()
+        response = None
+        
+        try:
+            # Make request with streaming enabled for memory efficiency
+            response = session.get(
+                url,
+                params=params,
+                headers=combined_headers,
+                timeout=self.timeout,
+                verify=self.verify_ssl,
+                stream=stream
+            )
+            
+            elapsed_time = time.time() - start_time
+            
+            # Check for large files using headers before downloading content
+            content_length = int(response.headers.get('Content-Length', 0))
+            download_full_content = True
+            
+            # For large files, only download partial content
+            if content_length > (self.max_file_size_mb * 1024 * 1024):
+                if self.verbose:
+                    logger.debug(f"Large file detected: {url} ({content_length/(1024*1024):.2f} MB)")
+                
+                # Only read the first chunk for analysis
+                content = self._read_partial_content(response, 32768)  # 32KB sample
+                download_full_content = False
+            else:
+                if stream:
+                    # For normal files, read all content but in a memory-efficient way
+                    content = self._read_streamed_content(response)
+                else:
+                    # If streaming disabled, use normal content access
+                    content = response.content
+                    
+            return {
+                "success": True,
+                "url": url,
+                "content": content,
+                "response": response,
+                "time": elapsed_time,
+                "download_full": download_full_content,
+                "content_length": content_length or len(content) if content else 0,
+                "status_code": response.status_code
+            }
+            
+        except requests.RequestException as e:
+            elapsed_time = time.time() - start_time
+            
+            if self.verbose:
+                logger.debug(f"Request failed: {url} - {str(e)}")
+                
+            return {
+                "success": False,
+                "url": url,
+                "error": str(e),
+                "time": elapsed_time,
+                "response": response,
+                "status_code": response.status_code if response else 0
+            }
+    
+    def _read_streamed_content(self, response: requests.Response, chunk_size: int = 8192) -> bytes:
+        """
+        Read streamed response content in chunks to minimize memory usage.
+        
+        Args:
+            response: Response object to read from
+            chunk_size: Size of chunks to read
+            
+        Returns:
+            Complete response content as bytes
+        """
+        content = b''
+        for chunk in response.iter_content(chunk_size=chunk_size):
+            if chunk:
+                content += chunk
+        return content
+    
+    def _read_partial_content(self, response: requests.Response, max_size: int = 32768) -> bytes:
+        """
+        Read only partial content from a large file.
+        
+        Args:
+            response: Response object to read from
+            max_size: Maximum bytes to read
+            
+        Returns:
+            Partial content as bytes
+        """
+        content = b''
+        bytes_read = 0
+        
+        for chunk in response.iter_content(chunk_size=4096):
+            if chunk:
+                content += chunk
+                bytes_read += len(chunk)
+                if bytes_read >= max_size:
+                    break
+                    
+        # Ensure response is closed to free resources
+        response.close()
+        
+        return content
+    
+    def head(self, url: str, headers: Dict[str, str] = None) -> Dict[str, Any]:
+        """
+        Perform a HEAD request to check resource existence and metadata.
+        
+        Args:
+            url: The URL to request
+            headers: Additional headers
+            
+        Returns:
+            Dictionary with request results
+        """
+        session = self._get_session()
+        combined_headers = self.headers.copy()
+        
+        if headers:
+            combined_headers.update(headers)
+            
+        start_time = time.time()
+        response = None
+        
+        try:
+            response = session.head(
+                url,
+                headers=combined_headers,
+                timeout=self.timeout,
+                verify=self.verify_ssl
+            )
+            
+            elapsed_time = time.time() - start_time
+            
+            return {
+                "success": True,
+                "url": url,
+                "response": response,
+                "time": elapsed_time,
+                "status_code": response.status_code
+            }
+            
+        except requests.RequestException as e:
+            elapsed_time = time.time() - start_time
+            
+            return {
+                "success": False,
+                "url": url,
+                "error": str(e),
+                "time": elapsed_time,
+                "response": response,
+                "status_code": response.status_code if response else 0
+            }
+    
+    def close(self):
+        """Close the session and free resources."""
+        if self.session:
+            self.session.close()
+            self.session = None
+            self.is_session_created = False
