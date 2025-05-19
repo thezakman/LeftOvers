@@ -4,23 +4,22 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "LeftOvers"
-version = "1.2.0"
+version = "1.2.4"
 description = "An advanced scanner to find residual files on web servers"
 readme = "README.md"
 authors = [
     {name = "TheZakMan"}
 ]
-requires-python = ">=3.7"
+requires-python = ">=3.8"
 dependencies = [
-    "requests>=2.27.1",
-    "colorama>=0.4.4",
-    "rich>=12.0.0",
-    "tqdm>=4.62.3",
-    "urllib3>=1.26.8",
-    "tldextract>=3.1.2",
-    "pyOpenSSL>=22.0.0",
-    "cryptography>=36.0.0",
-    "concurrent-futures-pool>=1.0.0",
+    "requests>=2.31.0",
+    "colorama>=0.4.6",
+    "rich>=13.4.2",
+    "tqdm>=4.66.1",
+    "urllib3>=2.0.4",
+    "tldextract>=3.4.4",
+    "pyOpenSSL>=23.2.0",
+    "cryptography>=41.0.3",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -37,11 +36,12 @@ classifiers = [
 keywords = ["security", "scanner", "web", "pentest", "residual files", "backups"]
 
 [project.scripts]
-leftovers = "LeftOvers.__main__:main"
+leftovers = "core.cli:main"
 
 [project.urls]
 "Homepage" = "https://github.com/thezakman/LeftOvers"
 "Bug Tracker" = "https://github.com/thezakman/LeftOvers/issues"
 
 [tool.setuptools]
-packages = ["LeftOvers", "LeftOvers.core", "LeftOvers.utils"]
+packages = ["core", "utils"]
+py-modules = ["LeftOvers", "app_settings", "__main__"]

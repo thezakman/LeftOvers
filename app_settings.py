@@ -34,7 +34,7 @@ OUTPUT_FORMAT = "console"  # Options: console, json, csv
 
 # Content type filtering - DO NOT FILTER PDF files
 IGNORE_CONTENT = [
-    # "text/html",               # Uncomment to ignore normal HTML pages
+    "text/html",               # Uncomment to ignore normal HTML pages
     # "application/javascript",  # Uncomment to ignore JavaScript files
     # "application/xml",         # Uncomment to ignore XML files
 ]

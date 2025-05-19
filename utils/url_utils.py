@@ -159,10 +159,13 @@ def _generate_base_tests(add_test, scheme, full_hostname, path_label, path_segme
 
 def _generate_domain_tests(add_test, scheme, full_hostname, subdomain, domain, suffix):
     """Generate tests based on domain components."""
-    # Test based on subdomain (if exists)
+    # Test based on each subdomain level (if exists)
     if subdomain:
-        test_url = f"{scheme}://{full_hostname}/{subdomain}"
-        add_test(test_url, "Subdomain")
+        subdomains = subdomain.split('.')
+        for sub in subdomains:
+            test_url = f"{scheme}://{full_hostname}/{sub}"
+            # Usar "Subdomain:level" para poder identificar qual nível está sendo testado
+            add_test(test_url, f"Subdomain:{sub}")
 
     # Test based on domain name
     if domain:
@@ -174,7 +177,6 @@ def _generate_domain_tests(add_test, scheme, full_hostname, subdomain, domain, s
         domain_with_suffix = f"{domain}.{suffix}"
         test_url = f"{scheme}://{full_hostname}/{domain_with_suffix}"
         add_test(test_url, "Domain")
-
 def _generate_path_tests(add_test, scheme, full_hostname, path_label, path_segments, 
                        subdomain, domain, suffix):
     """Generate tests based on path components and their combinations with domain parts."""

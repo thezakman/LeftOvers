@@ -8,6 +8,7 @@ import urllib.parse
 from collections import defaultdict
 import time
 import re
+import tldextract
 
 from core.config import (
     VERSION, DEFAULT_TIMEOUT, DEFAULT_THREADS, DEFAULT_EXTENSIONS, 
@@ -123,13 +124,17 @@ class LeftOver:
         # Check if we are testing only a domain or a specific path efficiently
         is_domain_only = '/' not in base_url[8:] if base_url.startswith('http://') else ('/' not in base_url[9:] if base_url.startswith('https://') else False)
         
+        # Ensure base_url ends with / for domain-only URLs to properly append extensions
+        if is_domain_only and not base_url.endswith('/'):
+            base_url = f"{base_url}/"
+        
         # Build the full URL efficiently
         if is_domain_only and self.test_index:
             # If it's a domain and the test_index flag is enabled, test index.{extension}
             full_url = f"{base_url.rstrip('/')}/index.{extension}"
         else:
             # Otherwise, add the extension to the end of the URL normally
-            full_url = f"{base_url}.{extension}"
+            full_url = f"{base_url}{extension}"
         
         # For PDF and document files, we need additional tests
         important_extensions = ["pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx"]
@@ -230,9 +235,12 @@ class LeftOver:
             if scan_result.check_ignored_content_type():
                 return None
                 
-            # 4. Check ignored content by the -ic parameter (substring check)
-            if self.ignore_content and any(ignore in content_type for ignore in self.ignore_content):
-                return None
+            # 4. Check ignored content by the -ic parameter (normalize content_type first)
+            if self.ignore_content and content_type:
+                # Extract base content type without parameters like charset
+                content_type_base = content_type.split(';')[0].strip()
+                if any(ignore == content_type_base or content_type_base.startswith(f"{ignore}+") for ignore in self.ignore_content):
+                    return None
             
             # 5. Check if the URL has already been found previously
             if scan_result.url in self.found_urls:
@@ -313,12 +321,17 @@ class LeftOver:
         # Always check for exact match with extension first, especially for PDF files
         important_extensions = ["pdf", "docx", "xlsx", "pptx", "zip", "rar", "tar.gz", "tar"]
         
-        # Verificar extensões importantes independentemente do número total de extensões
+        # Check important extensions regardless of the total number of extensions
         important_exts_to_test = [ext for ext in self.extensions if ext.lower() in important_extensions]
         
-        # Se houver extensões importantes para testar, faça isso primeiro
+        # If there are important extensions to test, do it first
         for extension in important_exts_to_test:
-            direct_url = f"{target_url}.{extension}"
+            # Ensure target_url ends with / if it's a domain-only URL (for consistent formatting)
+            is_domain_only = '/' not in target_url[8:] if target_url.startswith('http://') else ('/' not in target_url[9:] if target_url.startswith('https://') else False)
+            if is_domain_only and not target_url.endswith('/'):
+                direct_url = f"{target_url}/.{extension}"
+            else:
+                direct_url = f"{target_url}.{extension}"
             
             if self.verbose:
                 logger.debug(f"HIGH PRIORITY: Testing direct URL for important file: {direct_url}")
@@ -351,10 +364,17 @@ class LeftOver:
                 self.stats['requests'] += 1
                 self.stats['total_time'] += req_time
                 
-                # Check for successful or partial content response (206)
+                # Check for successful or partial content (206)
                 if response.status_code in [200, 206]:
                     # File found!
                     content_type = response.headers.get('Content-Type', 'Unknown')
+                    
+                    # Apply content-type filter here as well before processing
+                    content_type_base = content_type.split(';')[0].strip()
+                    if self.ignore_content and any(ignore == content_type_base for ignore in self.ignore_content):
+                        if self.verbose:
+                            logger.debug(f"Ignoring result with filtered content type: {content_type_base}")
+                        continue
                     
                     # Try to get accurate content length
                     if 'Content-Length' in response.headers:
@@ -400,8 +420,14 @@ class LeftOver:
                 # Skip if already tested as an important extension
                 if extension.lower() in important_extensions:
                     continue
+                   
+                # Ensure proper URL formatting with / for domain-only URLs 
+                is_domain_only = '/' not in target_url[8:] if target_url.startswith('http://') else ('/' not in target_url[9:] if target_url.startswith('https://') else False)
+                if is_domain_only and not target_url.endswith('/'):
+                    direct_url = f"{target_url}/.{extension}"
+                else:
+                    direct_url = f"{target_url}.{extension}"
                     
-                direct_url = f"{target_url}.{extension}"
                 if self.verbose:
                     logger.debug(f"Testing direct URL: {direct_url}")
                     
@@ -421,6 +447,14 @@ class LeftOver:
                         status_code = response.status_code
                         headers = response.headers
                         content_type = headers.get('Content-Type', 'N/A')
+                        
+                        # Apply content-type filter before processing
+                        content_type_base = content_type.split(';')[0].strip()
+                        if self.ignore_content and any(ignore == content_type_base for ignore in self.ignore_content):
+                            if self.verbose:
+                                logger.debug(f"Ignoring direct URL result with filtered content type: {content_type_base}")
+                            continue
+                        
                         content = response.content
                         
                         # Get Content-Length from header which is more accurate for large files
@@ -691,12 +725,23 @@ class LeftOver:
             parts = path.split('/')
             return parts[-1] if parts else ""
 
+        elif test_type.startswith("Subdomain:"):
+            # Formato novo: "Subdomain:level" - extrair o nível específico do tipo
+            subdomain_level = test_type.split(':', 1)[1]
+            return subdomain_level
+
         elif test_type == "Subdomain":
             hostname = parsed.netloc.split(':')[0]  # Remove port if exists
             
             # Cache of compound domains to avoid repetitive checks
             compound_tlds = {'co.uk', 'com.br', 'com.au', 'org.br', 'net.br', 'com.vc', 'edu.br', 'gov.br'}
             
+            # Usar tldextract para obter o subdomínio completo
+            extracted = tldextract.extract(base_url)
+            if extracted.subdomain:
+                return extracted.subdomain  # Retorna o subdomínio completo incluindo níveis compostos
+            
+            # Fallback para o método antigo se tldextract falhar
             parts = hostname.split('.')
             if len(parts) >= 3:
                 return parts[0]

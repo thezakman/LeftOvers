@@ -1,12 +1,12 @@
 """
-HTTP client utilities for the LeftOvers scanner.
+HTTP client and URL processing utilities for LeftOvers scanner.
 """
 
-import time
-import random
 import hashlib
+import random
 import re
 import os
+import time
 from urllib.parse import urlparse
 from typing import Dict, Optional, Any, Tuple
 from functools import lru_cache

@@ -2,6 +2,24 @@
 Console utilities for LeftOvers. Handles pretty output and formatting.
 """
 
+# Fix for macOS permission issues with os.getcwd() in rich module
+import os
+import sys
+
+# Patch os.getcwd to avoid permission issues in macOS
+original_getcwd = os.getcwd
+def safe_getcwd():
+    try:
+        return original_getcwd()
+    except (OSError, PermissionError):
+        # Fallback to a safe directory if getcwd() fails
+        home_dir = os.path.expanduser('~')
+        return home_dir
+
+# Apply the patch before importing rich
+os.getcwd = safe_getcwd
+
+# Now it's safe to import rich
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
@@ -10,6 +28,8 @@ from rich.progress import (
     TaskProgressColumn, TimeElapsedColumn, TimeRemainingColumn
 )
 from rich import box
+ 
+from utils.file_utils import format_size
 
 # Initialize Rich console
 console = Console()
@@ -79,53 +99,53 @@ def print_results_table(results, use_color=True, max_size_mb=50):
     table.add_column("Notes", style="yellow" if use_color else "")
 
     for result in results:
-        # Verifica se estamos lidando com um dicionário ou um objeto ScanResult
+        # Check if we are dealing with a dictionary or ScanResult object
         is_dict = isinstance(result, dict)
         
         status_code = result.get("status_code", 0) if is_dict else result.status_code
         
-        # Processar o tamanho do arquivo com função formatadora para melhor legibilidade
+        # Process file size with formatting function for better readability
         if is_dict:
             file_size = result.get("content_length", 0)
         else:
             file_size = result.content_length if hasattr(result, "content_length") else 0
         
-        # Formatação do tamanho do arquivo com função auxiliar
-        file_size_str = _format_file_size(file_size)
+        # Format file size with helper function
+        file_size_str = format_size(file_size)
             
-        # Verifica notas adicionais
+        # Check additional notes
         notes = ""
         
-        # Verifica se é um arquivo grande
+        # Check if it's a large file
         is_large_file = False
         if file_size > max_size_mb * 1024 * 1024:
             notes = "Large file detected!"
             is_large_file = True
                 
-        # Verifica falsos positivos
+        # Check false positives
         if hasattr(result, "false_positive") and result.false_positive:
             if notes:
                 notes += " | "
             notes += f"False positive: {result.false_positive_reason if hasattr(result, 'false_positive_reason') else 'Yes'}"
         
-        # Formatação do status code com cores
+        # Format status code with colors
         if use_color:
             status_text = _format_status_with_color(status_code)
         else:
             status_text = str(status_code)
         
-        # Obter URL e tipo de conteúdo
+        # Get URL and content type
         url = result.get("url", "") if is_dict else (result.url if hasattr(result, "url") else "")
         content_type = result.get("content_type", "") if is_dict else (result.content_type if hasattr(result, "content_type") else "")
         
-        # Simplificar o tipo de conteúdo para exibição
+        # Simplify content type for display
         content_type = _format_content_type(content_type)
         
-        # Truncar URL se for muito longo
+        # Truncate URL if too long
         if len(url) > 80:
             url = url[:77] + "..."
             
-        # Aplicar estilo especial para arquivos grandes ou falsos positivos
+        # Apply special style for large files or false positives
         url_style = ""
         if is_large_file and use_color:
             url_style = "dim cyan"
@@ -141,31 +161,6 @@ def print_results_table(results, use_color=True, max_size_mb=50):
         )
 
     console.print(table)
-
-def _format_file_size(size_bytes):
-    """
-    Format a size in bytes to a human-readable string.
-    
-    Args:
-        size_bytes: Size in bytes
-        
-    Returns:
-        Formatted size string (e.g., "2.5 KB", "1.2 MB")
-    """
-    if size_bytes is None or size_bytes == 0:
-        return "0 B"
-        
-    units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
-    
-    unit = 0
-    while size_bytes >= 1024 and unit < len(units) - 1:
-        size_bytes /= 1024.0
-        unit += 1
-    
-    if unit == 0:  # bytes
-        return f"{int(size_bytes)} {units[unit]}"
-    else:
-        return f"{size_bytes:.1f} {units[unit]}"
 
 def _format_status_with_color(status_code):
     """Helper function to format status code with appropriate color."""
@@ -332,11 +327,11 @@ def print_url_list_progress(current: int, total: int, url: str, use_color: bool 
     percentage = (current / total) * 100
     
     if use_color:
-        # Criar uma barra de progresso visual mais compacta
+        # Create a more compact visual progress bar
         filled_blocks = int(percentage / 10)
         progress_bar = f"[{'█' * filled_blocks}{' ' * (10 - filled_blocks)}]"
         
-        # Mostrar a informação de progresso em uma linha única e mais limpa
+        # Show progress information in a single clean line
         console.print(f"[bold blue]── URL {current}/{total} {progress_bar} {percentage:.1f}% ── [cyan]{url}[/cyan][/bold blue]")
     else:
         progress_bar = f"[{'#' * int(percentage // 10)}{' ' * (10 - int(percentage // 10))}]"

@@ -9,6 +9,7 @@ from rich import box
 
 from core.result import ScanResult
 from utils.logger import logger
+from utils.file_utils import format_size
 
 def group_results_by_status(results: List[ScanResult]) -> Dict[int, Dict[str, int]]:
     """Group results by status code and count false positives."""
@@ -124,7 +125,7 @@ def generate_summary_report(results: List[ScanResult], console: Console, use_col
         logger.debug(f"Interesting results: {len(interesting)}")
         logger.debug(f"Content types found: {len(content_types)}")
         logger.debug(f"Duplicate content sets: {len(duplicate_sets)}")
-        logger.debug(f"Total size of all content: {_format_size(total_size)}")
+        logger.debug(f"Total size of all content: {format_size(total_size)}")
         
     # Create a summary table with enhanced styling
     title_style = "bold cyan" if use_color else ""
@@ -152,7 +153,7 @@ def generate_summary_report(results: List[ScanResult], console: Console, use_col
     if total_size > 0:
         table.add_row(
             "Total Size", 
-            _format_size(total_size),
+            format_size(total_size),
             ""
         )
     
@@ -238,7 +239,7 @@ def generate_top_findings_report(results: List[ScanResult], console: Console):
         status_text = f"[{status_style}]{result.status_code}[/{status_style}]"
         
         # Format content size with appropriate units for better readability
-        size_text = _format_size(result.content_length)
+        size_text = format_size(result.content_length)
         
         # Format content type more clearly
         content_type = result.content_type.split(';')[0] if result.content_type else "N/A"
@@ -287,34 +288,6 @@ def _is_interesting_content_type(content_type: str) -> bool:
     
     base_type = content_type.split(';')[0].lower()
     return any(base_type.startswith(t) for t in interesting_types)
-
-def _format_size(size_bytes: int) -> str:
-    """
-    Format a size in bytes to a human-readable string.
-    
-    Args:
-        size_bytes: Size in bytes
-        
-    Returns:
-        Formatted size string (e.g., "2.5 KB", "1.2 MB")
-    """
-    if size_bytes is None or size_bytes == 0:
-        return "0 B"
-        
-    # Use binary units (1024) with standard abbreviations
-    units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
-    
-    # Logarithm calculation for determining the appropriate unit
-    unit = 0
-    while size_bytes >= 1024 and unit < len(units) - 1:
-        size_bytes /= 1024.0
-        unit += 1
-    
-    # Format with appropriate precision (1 decimal place for KB and above)
-    if unit == 0:  # bytes
-        return f"{int(size_bytes)} {units[unit]}"
-    else:
-        return f"{size_bytes:.1f} {units[unit]}"
 
 def _get_status_style(status_code: int) -> str:
     """

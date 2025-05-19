@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-from setuptools import setup, find_namespace_packages
+from setuptools import setup, find_packages
 
 setup(
     name="LeftOvers",
-    version="1.2.3",  # Updated to match current app_settings.py version
+    version="1.2.4",  
     description="An advanced scanner to find residual files on web servers",
     author="TheZakMan",
-    packages=find_namespace_packages(include=["LeftOvers", "LeftOvers.*"]),
+    packages=find_packages(".") + [""],
+    py_modules=["LeftOvers", "app_settings", "__main__"],
     include_package_data=True,
     install_requires=[
         "requests>=2.31.0",
@@ -19,11 +20,10 @@ setup(
         "tldextract>=3.4.4",
         "pyOpenSSL>=23.2.0",
         "cryptography>=41.0.3",
-        "concurrent-futures-pool>=1.1.0",
     ],
     entry_points={
         "console_scripts": [
-            "leftovers=LeftOvers.__main__:main",
+            "leftovers=core.cli:main",
         ],
     },
     python_requires=">=3.8",

@@ -6,12 +6,55 @@ import re
 import random
 import hashlib
 import difflib
+import time
 from typing import Dict, Tuple, Any, Set
 from functools import lru_cache
+import sys
+
+# Add workaround for pkg_resources issues
+try:
+    import pkg_resources
+except (ImportError, PermissionError, Exception) as e:
+    # Create a more complete mock of pkg_resources to prevent errors in tldextract
+    class MockPkgResources:
+        class DistributionNotFound(Exception):
+            pass
+            
+        class Distribution:
+            def __init__(self, version):
+                self.version = version
+                
+        def get_distribution(self, name):
+            """Mock implementation of get_distribution to fix tldextract import"""
+            versions = {
+                'tldextract': '3.4.0',  # Assume a reasonable version
+                'requests': '2.31.0',
+                'urllib3': '2.0.4'
+            }
+            if name in versions:
+                dist = self.Distribution(versions[name])
+                return dist
+            raise self.DistributionNotFound(f"Distribution '{name}' not found")
+    
+    # Replace pkg_resources with our enhanced mock
+    pkg_resources_mock = MockPkgResources()
+    sys.modules['pkg_resources'] = pkg_resources_mock
+    print(f"Warning: pkg_resources import failed. Using enhanced fallback implementation.")
 
 from core.result import ScanResult
 from utils.logger import logger
-from utils.http_utils import calculate_content_hash, HttpClient
+
+# Safe import of http_utils - try/except pattern to handle import errors
+try:
+    from utils.http_utils import calculate_content_hash, HttpClient
+except ImportError as e:
+    # Define fallback functions if imports fail
+    def calculate_content_hash(content):
+        if not content:
+            return "empty"
+        return hashlib.md5(content).hexdigest()
+        
+    print(f"Warning: Failed to import from http_utils: {str(e)}. Using fallback implementation.")
 
 def establish_baseline(http_client: HttpClient, base_url: str, verbose: bool = False):
     """

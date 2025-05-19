@@ -64,6 +64,31 @@ def load_url_list(file_path: str) -> List[str]:
         logger.error(f"Error loading URL list: {str(e)}")
         return []
 
+def format_size(size_bytes: int) -> str:
+    """
+    Format a size in bytes to a human-readable string.
+    
+    Args:
+        size_bytes: Size in bytes
+        
+    Returns:
+        Formatted size string (e.g., "2.5 KB", "1.2 MB")
+    """
+    if size_bytes is None or size_bytes == 0:
+        return "0 B"
+        
+    units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
+    
+    unit = 0
+    while size_bytes >= 1024 and unit < len(units) - 1:
+        size_bytes /= 1024.0
+        unit += 1
+    
+    if unit == 0:  # bytes
+        return f"{int(size_bytes)} {units[unit]}"
+    else:
+        return f"{size_bytes:.1f} {units[unit]}"
+
 def export_results(results: List[Any], output_file: str) -> bool:
     """
     Export scan results to a JSON file.
