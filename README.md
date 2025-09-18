@@ -88,6 +88,9 @@ python LeftOvers.py -u http://example.com -b
 # Enable recursive brute force mode (test each path level)
 python LeftOvers.py -u http://example.com -br
 
+# Enable dynamic domain-based wordlist generation (NEW!)
+python LeftOvers.py -u http://example.com -d
+
 # Enable brute force mode with custom wordlist
 python LeftOvers.py -u http://example.com -b --wordlist wordlists/custom.txt
 
@@ -147,6 +150,8 @@ python LeftOvers.py --help
 - **Intelligent Detection**: Advanced algorithms to filter false positives
 - **Multi-Format Support**: Tests over 120 common file extensions
 - **Brute Force Mode**: Test directories and files using common keywords
+- **Dynamic Domain Wordlists**: Generates intelligent backup file patterns based on domain analysis
+- **Smart Extension Prioritization**: Automatically prioritizes extensions based on target context
 - **Efficient Management**:
   - Intelligently detects and handles large files (>10MB)
   - Avoids result duplication
