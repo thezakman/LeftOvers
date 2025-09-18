@@ -5,7 +5,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="LeftOvers",
-    version="1.2.4",  
+    version="1.2.5",  
     description="An advanced scanner to find residual files on web servers",
     author="TheZakMan",
     packages=find_packages(".") + [""],

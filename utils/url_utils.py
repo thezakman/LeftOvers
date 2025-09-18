@@ -12,6 +12,7 @@ import tldextract
 
 from utils.logger import logger
 from utils.http_utils import parse_url
+from utils.domain_generator import DomainWordlistGenerator
 from core.detection import establish_baseline, perform_sanity_check
 # Compile IP pattern only once for reuse
 IP_PATTERN = re.compile(r'^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$')
@@ -28,16 +29,36 @@ COMMON_IP_PATH_TESTS = [
     "files", "logs", "private", "public", "system", "temp", "upload"
 ]
 
+# High-priority leftover and backup patterns
+LEFTOVER_PATTERNS = [
+    "backup", "bak", "old", "orig", "temp", "tmp", "archive", "archives",
+    "backup_files", "old_files", "temp_files", "bkp", "copy", "save",
+    "test", "dev", "staging", "prod", "production", "debug", "logs"
+]
+
+# Date-based backup patterns (common in leftovers)
+DATE_PATTERNS = [
+    "2023", "2024", "2025", "backup_2023", "backup_2024", "old_2023",
+    "archive_2023", "bkp_2024", "temp_2024"
+]
+
+# Environment indicators often left exposed
+ENVIRONMENT_PATTERNS = [
+    "dev", "development", "test", "testing", "stage", "staging",
+    "prod", "production", "beta", "alpha", "demo", "sandbox"
+]
+
 # Common ports pre-defined
 COMMON_PORTS = ["8080", "8443", "9000"]
 
 def generate_test_urls(
-        http_client, 
-        target_url: str, 
-        brute_mode: bool = False, 
+        http_client,
+        target_url: str,
+        brute_mode: bool = False,
         backup_words: List[str] = None,
         verbose: bool = False,
-        brute_recursive: bool = False) -> Tuple[List[Tuple[str, str]], Dict, Dict]:
+        brute_recursive: bool = False,
+        domain_wordlist: bool = False) -> Tuple[List[Tuple[str, str]], Dict, Dict]:
     """Generate URLs to be tested based on the target URL - Optimized version."""
     # Parse URL returns (base_url, domain, path)
     base_url, domain, path = parse_url(target_url)
@@ -96,12 +117,15 @@ def generate_test_urls(
     # Execute test generations in parallel when possible
     tasks = []
     
-    # Always run base tests
+    # Priority 1: Always run base tests first (specific to the URL structure)
     tasks.append((_generate_base_tests, (add_test, scheme, full_hostname, path_label, path_segments)))
-    
-    # Domain-specific or IP-specific tests
+
+    # Priority 2: Domain-specific tests (most relevant for this specific target)
     if not is_ip:
         tasks.append((_generate_domain_tests, (add_test, scheme, full_hostname, subdomain, domain_name, suffix)))
+
+    # Priority 3: Generic leftover pattern tests (run after domain-specific tests)
+    tasks.append((_generate_leftover_tests, (add_test, scheme, full_hostname, subdomain, domain_name, path_label)))
     
     # Path-based tests
     if path_label:
@@ -124,9 +148,19 @@ def generate_test_urls(
     
     # Brute force tests (run sequentially as they modify the same set)
     if brute_mode and backup_words:
+        final_backup_words = backup_words
+
+        # Check if domain wordlist generation is enabled
+        if domain_wordlist:
+            # Enhance backup words with intelligent domain variations
+            domain_generator = DomainWordlistGenerator()
+            final_backup_words = domain_generator.enhance_existing_wordlist(
+                backup_words, target_url
+            )
+
         _generate_brute_force_tests(
-            add_test, scheme, full_hostname, path_label, path_segments, 
-            backup_words, brute_recursive
+            add_test, scheme, full_hostname, path_label, path_segments,
+            final_backup_words, brute_recursive
         )
 
     # Advanced debugging
@@ -154,8 +188,9 @@ def _generate_base_tests(add_test, scheme, full_hostname, path_label, path_segme
                 test_url = f"{scheme}://{full_hostname}/{segment}"
                 add_test(test_url, f"Segment {i+1}")
     else:
-        # If no path, just test the base URL
-        add_test(full_url_base, "Base URL")
+        # If no path, skip base URL tests as they rarely yield useful results
+        # (testing /txt, /log etc. without context is not productive)
+        pass
 
 def _generate_domain_tests(add_test, scheme, full_hostname, subdomain, domain, suffix):
     """Generate tests based on domain components."""
@@ -177,7 +212,111 @@ def _generate_domain_tests(add_test, scheme, full_hostname, subdomain, domain, s
         domain_with_suffix = f"{domain}.{suffix}"
         test_url = f"{scheme}://{full_hostname}/{domain_with_suffix}"
         add_test(test_url, "Domain")
-def _generate_path_tests(add_test, scheme, full_hostname, path_label, path_segments, 
+
+    # Generate composite subdomain permutations for detailed testing
+    if subdomain and any(sep in subdomain for sep in ['-', '_', '.']):
+        _generate_subdomain_permutation_tests(add_test, scheme, full_hostname, subdomain)
+
+def _generate_subdomain_permutation_tests(add_test, scheme, full_hostname, subdomain):
+    """Generate detailed permutation tests for composite subdomains."""
+    # Split by all separators to get all parts
+    import re
+    all_parts = re.split(r'[._-]', subdomain)
+    all_parts = [part for part in all_parts if part]  # Remove empty parts
+
+    # For complex subdomains like "mod.banco-honda", test all meaningful combinations
+    if len(all_parts) >= 2:
+        # Generate all possible 2-part and 3-part combinations
+        permutations = []
+
+        # Standard 2-part permutations with first two parts
+        first_part = all_parts[0]
+        second_part = all_parts[1]
+
+        permutations.extend([
+            (f"{first_part}.{second_part}", f"Permutation 1 ({first_part}.{second_part})"),
+            (f"{first_part}_{second_part}", f"Permutation 2 ({first_part}_{second_part})"),
+            (f"{first_part}{second_part}", f"Permutation 3 ({first_part}{second_part})"),
+            (f"{second_part}.{first_part}", f"Permutation 4 ({second_part}.{first_part})"),
+            (f"{second_part}_{first_part}", f"Permutation 5 ({second_part}_{first_part})"),
+            (f"{second_part}{first_part}", f"Permutation 6 ({second_part}{first_part})"),
+            (first_part, f"Permutation 7 ({first_part})"),
+            (second_part, f"Permutation 8 ({second_part})")
+        ])
+
+        # If there are 3 or more parts, add comprehensive combinations
+        if len(all_parts) >= 3:
+            third_part = all_parts[2]
+
+            # All 3-part combinations
+            permutations.extend([
+                # All parts concatenated (the missing ones!)
+                (f"{first_part}{second_part}{third_part}", f"3-Part All: {first_part}{second_part}{third_part}"),
+                (f"{first_part}{third_part}{second_part}", f"3-Part Alt1: {first_part}{third_part}{second_part}"),
+                (f"{second_part}{first_part}{third_part}", f"3-Part Alt2: {second_part}{first_part}{third_part}"),
+                (f"{second_part}{third_part}{first_part}", f"3-Part Alt3: {second_part}{third_part}{first_part}"),
+                (f"{third_part}{first_part}{second_part}", f"3-Part Alt4: {third_part}{first_part}{second_part}"),
+                (f"{third_part}{second_part}{first_part}", f"3-Part Alt5: {third_part}{second_part}{first_part}"),
+
+                # 2-part combinations with 3rd part
+                (f"{first_part}{third_part}", f"Parts 1+3: {first_part}{third_part}"),
+                (f"{second_part}{third_part}", f"Parts 2+3: {second_part}{third_part}"),
+                (f"{third_part}{first_part}", f"Parts 3+1: {third_part}{first_part}"),
+                (f"{third_part}{second_part}", f"Parts 3+2: {third_part}{second_part}"),
+
+                # Individual 3rd part
+                (third_part, f"3rd Part Only: {third_part}"),
+
+                # With separators for common patterns
+                (f"{first_part}.{second_part}.{third_part}", f"3-Part Dots: {first_part}.{second_part}.{third_part}"),
+                (f"{first_part}_{second_part}_{third_part}", f"3-Part Underscores: {first_part}_{second_part}_{third_part}"),
+            ])
+
+        # Add all permutations
+        for pattern, description in permutations:
+            test_url = f"{scheme}://{full_hostname}/{pattern}"
+            add_test(test_url, description)
+
+def _generate_leftover_tests(add_test, scheme, full_hostname, subdomain, domain_name, path_label):
+    """Generate targeted leftover tests based on domain components."""
+
+    # Priority 1: Domain and subdomain-specific backup patterns (most relevant)
+    if domain_name:
+        for pattern in ["backup", "old", "bak", "temp"]:
+            test_url = f"{scheme}://{full_hostname}/{domain_name}_{pattern}"
+            add_test(test_url, f"Domain Backup: {domain_name}_{pattern}")
+
+            test_url = f"{scheme}://{full_hostname}/{pattern}_{domain_name}"
+            add_test(test_url, f"Backup Domain: {pattern}_{domain_name}")
+
+    if subdomain:
+        subdomain_parts = subdomain.split('.')
+        for sub_part in subdomain_parts:
+            if sub_part and len(sub_part) > 2:  # Skip short/empty parts
+                for pattern in ["backup", "old", "bak"]:
+                    test_url = f"{scheme}://{full_hostname}/{sub_part}_{pattern}"
+                    add_test(test_url, f"Subdomain Backup: {sub_part}_{pattern}")
+
+    # Priority 2: Path-specific backup patterns
+    if path_label:
+        path_base = path_label.split('/')[-1] if '/' in path_label else path_label
+        for pattern in ["backup", "old", "bak"]:
+            test_url = f"{scheme}://{full_hostname}/{path_base}_{pattern}"
+            add_test(test_url, f"Path Backup: {path_base}_{pattern}")
+
+    # Priority 3: Only add most common generic patterns (reduced set)
+    common_patterns = ["backup", "bak", "old", "temp", "archive", "test"]
+    for pattern in common_patterns:
+        test_url = f"{scheme}://{full_hostname}/{pattern}"
+        add_test(test_url, f"Common Leftover: {pattern}")
+
+    # Priority 4: Environment patterns (reduced to most common)
+    common_envs = ["dev", "test", "staging", "prod", "debug"]
+    for env_pattern in common_envs:
+        test_url = f"{scheme}://{full_hostname}/{env_pattern}"
+        add_test(test_url, f"Environment: {env_pattern}")
+
+def _generate_path_tests(add_test, scheme, full_hostname, path_label, path_segments,
                        subdomain, domain, suffix):
     """Generate tests based on path components and their combinations with domain parts."""
     # Generate partial paths for testing
@@ -319,7 +458,7 @@ def _test_domain_in_path_level(add_test, scheme, full_hostname, path_level, subd
     test_url = f"{scheme}://{full_hostname}/{path_level}/{full_hostname}"
     add_test(test_url, f"Path-Current-Hostname: /{path_level}")
 
-def _generate_brute_force_tests(add_test, scheme, full_hostname, path_label, path_segments, 
+def _generate_brute_force_tests(add_test, scheme, full_hostname, path_label, path_segments,
                               backup_words, brute_recursive):
     """Generate brute force test URLs."""
     # Filter backup words to avoid direct concatenation of terms with "." in IPs
@@ -328,17 +467,42 @@ def _generate_brute_force_tests(add_test, scheme, full_hostname, path_label, pat
         # For IPs, remove words that start with "." or contain ".env" or ".git", etc.
         # as these would be interpreted as part of the IP (causing errors like 187.86.59.16.env.dev)
         filtered_backup_words = [
-            word for word in backup_words 
+            word for word in backup_words
             if not (word.startswith('.') or '.env.' in word or '.git' in word)
         ]
+
+    # Separate words that already have extensions from those that don't
+    words_with_extensions = []
+    words_without_extensions = []
+
+    for word in filtered_backup_words:
+        # Check if word already has a file extension (contains a dot and the part after dot is 2-5 chars)
+        if '.' in word:
+            parts = word.split('.')
+            if len(parts) >= 2 and 2 <= len(parts[-1]) <= 5 and parts[-1].isalnum():
+                words_with_extensions.append(word)
+            else:
+                words_without_extensions.append(word)
+        else:
+            words_without_extensions.append(word)
     
     # Normal brute force (only at the leaf directory)
     if path_label:
-        for word in filtered_backup_words:
+        # For words that already have extensions, add them directly
+        for word in words_with_extensions:
+            test_url = f"{scheme}://{full_hostname}/{path_label}/{word}"
+            add_test(test_url, f"Brute Force: {word}")
+        # For words without extensions, they will be processed normally by the scanner
+        for word in words_without_extensions:
             test_url = f"{scheme}://{full_hostname}/{path_label}/{word}"
             add_test(test_url, f"Brute Force: {word}")
     else:
-        for word in filtered_backup_words:
+        # For words that already have extensions, add them directly
+        for word in words_with_extensions:
+            test_url = f"{scheme}://{full_hostname}/{word}"
+            add_test(test_url, f"Brute Force: {word}")
+        # For words without extensions, they will be processed normally by the scanner
+        for word in words_without_extensions:
             test_url = f"{scheme}://{full_hostname}/{word}"
             add_test(test_url, f"Brute Force: {word}")
 
@@ -359,7 +523,12 @@ def _generate_brute_force_tests(add_test, scheme, full_hostname, path_label, pat
         
         # For each path level, run brute force tests
         for level in path_levels:
-            for word in filtered_backup_words:
+            # For words that already have extensions, add them directly
+            for word in words_with_extensions:
+                test_url = f"{level}/{word}"
+                add_test(test_url, f"Brute Force Recursive: {word}")
+            # For words without extensions, they will be processed normally by the scanner
+            for word in words_without_extensions:
                 test_url = f"{level}/{word}"
                 add_test(test_url, f"Brute Force Recursive: {word}")
 

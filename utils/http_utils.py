@@ -74,34 +74,15 @@ class HttpClient:
         self.rotate_user_agent = rotate_user_agent
         self.use_cache = use_cache
         
+        # Optimized connection management
+        self.session = self._create_optimized_session(max_retries, backoff_factor)
+
         # Request cache to avoid redundant requests for the same URL
-        self.request_cache = {}
+        self.request_cache = {} if use_cache else None
         self.max_cache_size = max_cache_size
         self.cache_hits = 0
         self.cache_misses = 0
         
-        # Configure connection pooling and retry strategy
-        retry_strategy = requests.packages.urllib3.util.Retry(
-            total=max_retries,
-            backoff_factor=backoff_factor,
-            status_forcelist=[429, 500, 502, 503, 504],
-            allowed_methods=["HEAD", "GET"]
-        )
-        
-        # Create an adapter with connection pooling
-        adapter = requests.adapters.HTTPAdapter(
-            max_retries=retry_strategy,
-            pool_connections=20,  # Number of connection pools to cache
-            pool_maxsize=50,      # Number of connections to save in the pool
-            pool_block=False      # Whether to block when pool is full
-        )
-        
-        # Create a session with connection pooling
-        self.session = requests.Session()
-        self.session.mount("http://", adapter)
-        self.session.mount("https://", adapter)
-        self.session.headers.update(self.headers)
-        self.session.verify = verify_ssl
         
         # Pre-populated set for faster lookups of known large content types
         self._large_content_types = {
@@ -119,7 +100,34 @@ class HttpClient:
             'image/jpeg', 'image/png', 'image/gif', 'image/tiff',
             'video/mp4', 'video/mpeg', 'video/quicktime', 'audio/mpeg'
         }
-    
+
+    def _create_optimized_session(self, max_retries: int, backoff_factor: float):
+        """Create an optimized requests session with connection pooling."""
+        # Configure retry strategy
+        retry_strategy = requests.packages.urllib3.util.Retry(
+            total=max_retries,
+            backoff_factor=backoff_factor,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["HEAD", "GET"]
+        )
+
+        # Create adapter with optimized connection pooling
+        adapter = requests.adapters.HTTPAdapter(
+            max_retries=retry_strategy,
+            pool_connections=20,  # Number of connection pools to cache
+            pool_maxsize=100,     # Increased for high concurrency
+            pool_block=False      # Don't block when pool is full
+        )
+
+        # Create and configure session
+        session = requests.Session()
+        session.mount("http://", adapter)
+        session.mount("https://", adapter)
+        session.headers.update(self.headers)
+        session.verify = self.verify_ssl
+
+        return session
+
     def rotate_agent(self):
         """Rotate the User-Agent to a random one from the list."""
         if self.rotate_user_agent and USER_AGENTS:
@@ -148,11 +156,26 @@ class HttpClient:
             logger.debug(f"HTTP Request: GET {url}")
             
         # Check cache first if enabled
-        if self.use_cache and url in self.request_cache:
+        if self.request_cache and url in self.request_cache:
             self.cache_hits += 1
             if VERBOSE:
                 logger.debug(f"Cache hit for {url}")
-            return self.request_cache[url]
+            cached = self.request_cache[url]
+            # Create a mock response object for compatibility
+            if cached["success"]:
+                mock_response = type('MockResponse', (), {
+                    'status_code': cached["status_code"],
+                    'headers': cached["headers"],
+                    'content': b'',  # Empty content for cached responses
+                })()
+                return {
+                    "success": True,
+                    "response": mock_response,
+                    "time": cached["time"],
+                    "error": cached["error"]
+                }
+            else:
+                return cached
         else:
             self.cache_misses += 1
         
@@ -302,18 +325,26 @@ class HttpClient:
             result["time"] = time.time() - start_time
         
         # Cache the result if successful and caching is enabled
-        if self.use_cache and result["success"]:
+        if self.request_cache and result["success"]:
             # Manage cache size - remove oldest entry if cache is full
             if len(self.request_cache) >= self.max_cache_size:
-                # Remove a random entry to avoid all entries expiring at once
+                # Remove oldest entry (FIFO to keep memory usage controlled)
                 try:
                     oldest_key = next(iter(self.request_cache))
                     del self.request_cache[oldest_key]
                 except (StopIteration, KeyError):
                     pass
-                    
-            # Add current result to cache
-            self.request_cache[url] = result
+
+            # Add current result to cache (lightweight version to save memory)
+            cached_result = {
+                "success": result["success"],
+                "response": None,  # Don't cache the full response object
+                "error": result.get("error", ""),
+                "time": result["time"],
+                "status_code": getattr(result.get("response"), "status_code", 0),
+                "headers": dict(getattr(result.get("response"), "headers", {}))
+            }
+            self.request_cache[url] = cached_result
             
         return result
     

@@ -24,75 +24,106 @@ DEFAULT_HEADERS = {
 
 # ─── Default list of extensions to test ───────────────────
 
-# Organized extensions by categories
-TEXT_CONFIG_EXTENSIONS = [
-    "txt", "log", "log1", "json", "xml", "yaml", "yml", "csv",
-    "properties", "plist", "config", "cfg", "ini", "conf", "env", "settings",
-    "lock", "tmpfile", "test", "sample", "md",
+# Organized extensions by priority for leftover/backup discovery
+
+# HIGH PRIORITY - Most likely to contain sensitive leftovers
+CRITICAL_BACKUP_EXTENSIONS = [
+    "bak", "backup", "old", "orig", "save", "copy", "tmp", "temp", "~",
+    "sql", "dump", "db", "sqlite", "sqlite3", "mdb", "accdb",
+    "zip", "rar", "tar", "tar.gz", "7z", "tgz", "gz", "bz2",
+    "env", "config", "cfg", "conf", "ini", "json", "xml", "yaml", "yml",
 ]
 
-DATABASE_EXTENSIONS = [
-    "sql", "db", "sqlite", "sqlite3", "mdb", "accdb", "dump",
+# MEDIUM PRIORITY - Configuration and log files
+CONFIG_LOG_EXTENSIONS = [
+    "txt", "log", "log1", "properties", "plist", "settings", "lock",
+    "csv", "pid", "out", "err", "debug", "trace", "cache",
 ]
 
-BACKUP_EXTENSIONS = [
-    "bak", "bak1", "old", "backup", "bkp", "copy", "copy1", "copy2",
-    "save", "orig", "temp", "tmp", "dist", "new", "~",
+# BACKUP FILE VARIATIONS - Common backup suffixes
+BACKUP_SUFFIXES = [
+    "bak", "bak1", "bak2", "backup", "old", "old1", "old2", "orig", "original",
+    "save", "saved", "copy", "copy1", "copy2", "tmp", "temp", "new", "dist",
+    "prev", "previous", "last", "~", ".~", "swp", "swo",
 ]
 
+# ARCHIVE EXTENSIONS - Compressed files likely to be backups
 ARCHIVE_EXTENSIONS = [
-    "zip", "tar", "tgz", "gz", "gzip", "bz2", "xz", "7z", "rar",
-    "tar.gz", "tar.bz2",
+    "zip", "rar", "tar", "tar.gz", "tar.bz2", "tar.xz", "tgz", "tbz2", "txz",
+    "7z", "gz", "gzip", "bz2", "xz", "lzma", "z", "Z", "ace", "arj",
 ]
 
+# DATABASE FILES - Often forgotten on servers
+DATABASE_EXTENSIONS = [
+    "sql", "dump", "db", "sqlite", "sqlite3", "mdb", "accdb", "dbf",
+    "sdf", "mdf", "ldf", "frm", "ibd", "opt", "par", "TRG", "TRN",
+]
+
+# CONFIGURATION FILES - Sensitive configuration leftovers
+CONFIG_EXTENSIONS = [
+    "env", "config", "cfg", "conf", "ini", "yaml", "yml", "json", "xml",
+    "properties", "plist", "toml", "settings", "lock", "pid",
+]
+
+# EDITOR/IDE LEFTOVERS - Temporary files left by editors
 IDE_LEFTOVER_EXTENSIONS = [
-    "swp", "swo", "swn", "tmp~", "tmp.swp", "tmp.save", "sml", "autosave", "kate-swp",
+    "swp", "swo", "swn", "tmp~", "tmp.swp", "tmp.save", "sml",
+    "autosave", "kate-swp", "bak~", "backup~", ".#", "#",
+    "~1", "~2", "~3", "$$$", "___", ".tmp", ".temp",
 ]
 
-WEB_EXTENSIONS = [
-    "html", "htm", "js", "js.map", "json.map", "xml.map",
-    "css", "scss", "sass", "map",
+# SOURCE CODE BACKUPS - Code files with backup extensions
+CODE_BACKUP_EXTENSIONS = [
+    "php.bak", "php.old", "php.save", "php.tmp", "php~", "php.orig",
+    "jsp.bak", "jsp.old", "jsp.save", "jsp~", "jsp.orig",
+    "asp.bak", "asp.old", "asp.save", "asp~", "asp.orig",
+    "aspx.bak", "aspx.old", "aspx.save", "aspx~", "aspx.orig",
+    "py.bak", "py.old", "py.save", "py~", "py.orig", "py.tmp",
+    "rb.bak", "rb.old", "rb.save", "rb~", "rb.orig",
+    "sh.bak", "sh.old", "sh.save", "sh~", "sh.orig",
+    "js.bak", "js.old", "js.save", "js~", "js.orig",
+    "css.bak", "css.old", "css.save", "css~", "css.orig",
+    "html.bak", "html.old", "html.save", "html~", "html.orig",
 ]
 
-CODE_EXTENSIONS = [
-    "php", "php~", "php.bak", "php.old", "php.save",
-    "jsp", "jsp~", "jsp.bak", "jsp.old", "jsp.save",
-    "asp", "asp~", "asp.bak", "asp.old", "asp.save",
-    "aspx", "aspx.bak", "aspx.old",
-    "rb", "rb~", "rb.bak", "rb.old",
-    "py", "py~", "py.bak", "py.old", "py.save",
-    "sh", "sh~", "sh.bak", "sh.old", "svc", "ash", "ashx"
+# VERSION CONTROL LEFTOVERS - Files left by VCS operations
+VCS_LEFTOVER_EXTENSIONS = [
+    "rej", "patch", "diff", "merge", "orig", "mine", "theirs",
+    "r1", "r2", "working", "conflict", "BASE", "LOCAL", "REMOTE",
 ]
 
-VERSION_CONTROL_EXTENSIONS = [
-    "rej", "patch", "diff", "merge",
+# SENSITIVE DOCUMENT BACKUPS - Documents that might contain sensitive data
+DOCUMENT_BACKUP_EXTENSIONS = [
+    "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx",
+    "pdf.bak", "doc.bak", "docx.bak", "xls.bak", "xlsx.bak",
+    "rtf", "odt", "ods", "odp", "txt.bak", "csv.bak",
 ]
 
-DOCUMENT_EXTENSIONS = [
-    "doc", "docx", "xls", "xlsx", "ppt", "pptx", "pdf",
-    "rtf", "odt", "ods", "odp",
-]
-
-MISC_EXTENSIONS = [
-    "exe.bak", "dll.bak", "bin.bak", "img", "iso", "dat", "dcm", "key", 
-    "pem", "crt", "cert", "p12", "pfx", "jks", "keystore", "csr", 
+# SECURITY/CREDENTIAL FILES - Files containing credentials or keys
+SECURITY_EXTENSIONS = [
+    "key", "pem", "crt", "cert", "p12", "pfx", "jks", "keystore", "csr",
     "htpasswd", "passwd", "shadow", "pwd", "secret", "credentials",
-    "aws", "env.local", "env.dev", "env.prod", "env.test", 
-    "toml", "lock.json", "yarn.lock", "package-lock.json", "composer.lock"
+    "token", "auth", "oauth", "session", "cookie", "api_key",
+    "private", "public", "rsa", "dsa", "ssh", "gpg", "pgp",
+]
+
+# ENVIRONMENT AND BUILD FILES - Configuration and build artifacts
+BUILD_CONFIG_EXTENSIONS = [
+    "env.local", "env.dev", "env.prod", "env.test", "env.staging", "env.backup",
+    "lock.json", "yarn.lock", "package-lock.json", "composer.lock", "Pipfile.lock",
+    "requirements.txt.bak", "pom.xml.bak", "build.gradle.bak", "Makefile.bak",
 ]
 
 # Create the final DEFAULT_EXTENSIONS list from all categories
 DEFAULT_EXTENSIONS = [
-    *TEXT_CONFIG_EXTENSIONS,
-    *DATABASE_EXTENSIONS,
-    *BACKUP_EXTENSIONS,
-    *ARCHIVE_EXTENSIONS,
+    *CRITICAL_BACKUP_EXTENSIONS,
+    *CONFIG_LOG_EXTENSIONS,
+    *SECURITY_EXTENSIONS,
+    *CODE_BACKUP_EXTENSIONS,
     *IDE_LEFTOVER_EXTENSIONS,
-    *WEB_EXTENSIONS,
-    *CODE_EXTENSIONS,
-    *VERSION_CONTROL_EXTENSIONS,
-    *DOCUMENT_EXTENSIONS,
-    *MISC_EXTENSIONS,
+    *VCS_LEFTOVER_EXTENSIONS,
+    *DOCUMENT_BACKUP_EXTENSIONS,
+    *BUILD_CONFIG_EXTENSIONS,
 ]
 
 DEFAULT_FILES_WORDS = [

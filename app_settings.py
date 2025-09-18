@@ -3,7 +3,7 @@ Global application settings for LeftOvers tool.
 """
 
 # Version information
-VERSION = "1.2.4"
+VERSION = "1.2.5"
 
 # General settings
 DEBUG = False

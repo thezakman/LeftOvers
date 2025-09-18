@@ -69,8 +69,10 @@ def parse_arguments():
     parser.add_argument("--test-index", action="store_true", help="Test for index.{extension} on domain URLs")
     
     # Brute force options
-    parser.add_argument("-b", "--brute", action="store_true", help="Enable brute force mode with common backup words")
+    parser.add_argument("-b", "--brute", action="store_true", help="Enable brute force mode with common backup words (recommended for leftover discovery)")
     parser.add_argument("-br", "--brute-recursive", action="store_true", help="Enable recursive brute force mode (test each path level)")
+    parser.add_argument("-d", "--domain-wordlist", action="store_true", help="Enable dynamic domain-based wordlist generation (generates domain-specific permutations)")
+    parser.add_argument("--fast-scan", action="store_true", help="Quick scan mode: brute force + domain wordlist + optimized extensions")
     
     # Filters
     parser.add_argument("-sc", "--status", help="Filter by status codes (e.g., 200,301,403)")
@@ -158,15 +160,36 @@ def configure_scanner_from_args(args):
         disable_fp=args.no_fp
     )
             
-    # Add brute force capability if requested
-    if args.brute or args.brute_recursive:
-        if not args.silent:
-            logger.info(f"Brute force mode enabled with {len(DEFAULT_BACKUP_WORDS)} common backup words")
-            if args.brute_recursive:
-                logger.info("Recursive brute force mode enabled - testing all path levels")
-        scanner.brute_mode = True
-        scanner.brute_recursive = args.brute_recursive
-        scanner.backup_words = DEFAULT_BACKUP_WORDS
+    # Add brute force capability if requested, including fast-scan mode
+    if args.brute or args.brute_recursive or args.domain_wordlist or args.fast_scan:
+        backup_words = DEFAULT_BACKUP_WORDS.copy()
+
+        # Configure fast-scan mode (enables multiple features at once)
+        if args.fast_scan:
+            if not args.silent:
+                logger.info("Fast scan mode enabled: brute force + domain wordlist + extension optimization")
+            scanner.brute_mode = True
+            scanner.domain_wordlist = True
+            scanner.backup_words = backup_words
+            # Fast scan also reduces extensions to most effective ones for speed
+            if not extensions:  # Only if no custom extensions specified
+                from core.config import CRITICAL_BACKUP_EXTENSIONS, SECURITY_EXTENSIONS
+                scanner.extensions = CRITICAL_BACKUP_EXTENSIONS[:20] + SECURITY_EXTENSIONS[:10]
+        else:
+            # Regular brute force configuration
+            if not args.silent:
+                if args.brute or args.brute_recursive:
+                    logger.info(f"Brute force mode enabled with {len(backup_words)} common backup words")
+                    if args.brute_recursive:
+                        logger.info("Recursive brute force mode enabled - testing all path levels")
+
+                if args.domain_wordlist:
+                    logger.info("Domain-based wordlist generation enabled")
+
+            scanner.brute_mode = True
+            scanner.brute_recursive = args.brute_recursive
+            scanner.domain_wordlist = args.domain_wordlist
+            scanner.backup_words = backup_words
     
     return scanner
 

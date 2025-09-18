@@ -296,14 +296,20 @@ def check_false_positive(
     # Special case for binary content like PDFs - much less likely to be false positives
     # when returning success status codes
     if result.status_code in SUCCESS_STATUSES:
-        is_binary = any(ct in result.content_type.lower() for ct in 
-                       ['pdf', 'octet-stream', 'image/', 'audio/', 'video/', 
+        is_binary = any(ct in result.content_type.lower() for ct in
+                       ['pdf', 'octet-stream', 'image/', 'audio/', 'video/',
                         'zip', 'excel', 'word', 'powerpoint', 'binary'])
-        
+
         if is_binary:
             # Binary content with success code is very likely a real file
             return False, ""
-    
+
+    # Check for legitimate leftover/backup patterns
+    is_likely_leftover = _is_likely_leftover_file(result, response_content)
+    if is_likely_leftover:
+        # Files that match leftover patterns are less likely to be false positives
+        return False, ""
+
     # Pass - not identified as a false positive
     return False, ""
 
@@ -479,9 +485,99 @@ def parse_status_codes(codes_str: str) -> Set[int]:
     """Convert a string of status codes to a set of integers."""
     if not codes_str:
         return None
-    
+
     try:
         return {int(code.strip()) for code in codes_str.split(',') if code.strip()}
     except ValueError:
         logger.error("Invalid format for status codes. Use comma-separated numbers (e.g., 200,301,403)")
         return None
+
+def _is_likely_leftover_file(result: ScanResult, response_content: bytes) -> bool:
+    """
+    Check if the response appears to be a legitimate leftover/backup file.
+
+    Args:
+        result: ScanResult object with response metadata
+        response_content: Raw content bytes from the response
+
+    Returns:
+        Boolean indicating if the file is likely a legitimate leftover
+    """
+    from app_settings import SUCCESS_STATUSES
+
+    # Only apply special leftover detection for success status codes
+    if result.status_code not in SUCCESS_STATUSES:
+        return False
+
+    url_path = result.url.split('/')[-1].lower() if '/' in result.url else ""
+
+    # 1. Check for typical backup file patterns in URL
+    backup_indicators = [
+        'backup', 'bak', 'old', 'orig', 'save', 'copy', 'tmp', 'temp',
+        'archive', 'dump', '_old', '_bak', '_backup', '_copy', '_save',
+        'test', 'dev', 'staging', 'debug', 'log'
+    ]
+
+    has_backup_pattern = any(indicator in url_path for indicator in backup_indicators)
+
+    # 2. Check for date patterns common in backup files
+    date_patterns = ['2023', '2024', '2025', '_2023', '_2024', '_2025']
+    has_date_pattern = any(pattern in url_path for pattern in date_patterns)
+
+    # 3. Check for specific file extensions commonly found in leftovers
+    leftover_extensions = [
+        '.sql', '.dump', '.db', '.sqlite', '.zip', '.tar', '.gz', '.bak',
+        '.old', '.orig', '.log', '.txt', '.env', '.config', '.ini'
+    ]
+
+    has_leftover_extension = any(url_path.endswith(ext) for ext in leftover_extensions)
+
+    # 4. Analyze content for leftover patterns (if it's text-based)
+    content_indicates_leftover = False
+    if response_content and result.content_type:
+        content_type = result.content_type.lower()
+
+        if 'text/' in content_type or 'application/json' in content_type:
+            try:
+                text_content = response_content.decode('utf-8', errors='ignore')[:2000]
+
+                # Look for SQL dump patterns
+                sql_patterns = ['insert into', 'create table', 'drop table', 'mysqldump']
+                has_sql_pattern = any(pattern in text_content.lower() for pattern in sql_patterns)
+
+                # Look for config file patterns
+                config_patterns = ['password=', 'api_key=', 'secret=', '[database]', 'db_host=']
+                has_config_pattern = any(pattern in text_content.lower() for pattern in config_patterns)
+
+                # Look for debug/log patterns
+                log_patterns = ['error:', 'warning:', 'debug:', 'exception:', 'traceback']
+                has_log_pattern = any(pattern in text_content.lower() for pattern in log_patterns)
+
+                content_indicates_leftover = has_sql_pattern or has_config_pattern or has_log_pattern
+
+            except:
+                pass
+
+    # 5. Binary files with appropriate content types and sizes
+    is_legitimate_binary = False
+    if result.content_type:
+        content_type = result.content_type.lower()
+        binary_types = ['application/zip', 'application/x-gzip', 'application/octet-stream',
+                       'application/x-tar', 'application/sql', 'text/x-sql']
+
+        if any(btype in content_type for btype in binary_types):
+            # Binary files with reasonable size (not too small, which might indicate error pages)
+            if result.content_length > 100:  # At least 100 bytes
+                is_legitimate_binary = True
+
+    # Combine all indicators - if multiple indicators present, likely a real leftover
+    score = sum([
+        has_backup_pattern,
+        has_date_pattern,
+        has_leftover_extension,
+        content_indicates_leftover,
+        is_legitimate_binary
+    ])
+
+    # If 2 or more indicators, consider it a likely leftover
+    return score >= 2

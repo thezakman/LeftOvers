@@ -31,26 +31,31 @@ from rich import box
  
 from utils.file_utils import format_size
 
-# Initialize Rich console
-console = Console()
+# Initialize Rich console with colors enabled
+console = Console(force_terminal=True, width=120)
 
 def print_banner(use_color=True, silent=False):
     """Print the ASCII banner for the application."""
     if silent:
         return
 
-    banner_text = r"""
-    ___/-\___   _           __ _    ____                     
-   |---------| | |         / _| |  / __ \                       
-    | | | | |  | |     ___| |_| |_| |  | |_   _____ _ __ ___ 
-    | | | | |  | |    / _ \  _| __| |  | \ \ / / _ \ '__/ __| 
-    | | | | |  | |___|  __/ | | |_| |__| |\ V /  __/ |  \__ \ 
-    |_______|  |______\___|_|  \__|\____/  \_/ \___|_|  |___/ 
- """
+    banner_text = r"""   
+    ___/—\___   _           __ _    ____
+   |………………………| | |         / _| |  / __ \                   ©
+    | ¦ ¦ ¦ |  | |     ___| |_| |_| |  | |_   _____ _ __ ___
+    | ¦ ¦ ¦ |  | |    / _ \  _| __| |  | \ \ / / _ \ '__/ __|
+    | ¦ ¦ ¦ |  | |___|  __/ | | |_| |__| |\ V /  __/ |  \__ \
+    \_______/  |______\___|_|  \__|\____/  \_/ \___|_|  |___/
+    """
+
     if use_color:
-        console.print(banner_text, style="bold cyan")
+        console.print(banner_text, style="bold bright_white")
+        console.print("       [bold bright_green][Advanced Web Scanner for Leftover Files Discovery][/bold bright_green]")
+        console.print()
     else:
         print(banner_text)
+        print("    Advanced Web Scanner for Leftover Files Discovery")
+        print()
 
 def print_info_panel(text: str, use_color: bool = True, backup_words_count: int = None):
     """Print an info panel with the given text."""
@@ -60,7 +65,7 @@ def print_info_panel(text: str, use_color: bool = True, backup_words_count: int 
         full_text += f" | Words: {backup_words_count}"
         
     if use_color:
-        console.print(Panel(full_text, title="Scanner Info", border_style="cyan", expand=False))
+        console.print(Panel(full_text, title="Scanner Info", border_style="cyan", expand=False, padding=(0, 7)))
     else:
         print("\n" + "=" * 50)
         print(f" {full_text}")

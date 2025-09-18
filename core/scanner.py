@@ -24,6 +24,8 @@ from utils.console import (
 from utils.file_utils import load_url_list
 from utils.http_utils import HttpClient
 from utils.url_utils import generate_test_urls
+from utils.extension_optimizer import ExtensionOptimizer
+from utils.domain_generator import DomainWordlistGenerator
 
 # Compile regular expressions once for reuse
 SEGMENT_PATTERN = re.compile(r'Segment\s+(\d+)')
@@ -54,6 +56,8 @@ class LeftOver:
                  disable_fp: bool = False):
         """Initialize the scanner with the provided settings."""
         self.extensions = extensions or DEFAULT_EXTENSIONS
+        self.extension_optimizer = ExtensionOptimizer()
+        self.domain_generator = DomainWordlistGenerator()
         self.timeout = timeout
         self.max_workers = threads
         self.headers = headers or DEFAULT_HEADERS.copy()
@@ -70,6 +74,7 @@ class LeftOver:
         # Brute force settings (default empty, set by CLI)
         self.brute_mode = False
         self.brute_recursive = False
+        self.domain_wordlist = False
         self.backup_words = []
         
         # Filters
@@ -133,8 +138,8 @@ class LeftOver:
             # If it's a domain and the test_index flag is enabled, test index.{extension}
             full_url = f"{base_url.rstrip('/')}/index.{extension}"
         else:
-            # Otherwise, add the extension to the end of the URL normally
-            full_url = f"{base_url}{extension}"
+            # Otherwise, add the extension to the end of the URL normally with a dot
+            full_url = f"{base_url}.{extension}"
         
         # For PDF and document files, we need additional tests
         important_extensions = ["pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx"]
@@ -302,6 +307,11 @@ class LeftOver:
         """Process a URL, testing all extensions on all derived targets - Optimized version."""
         # Record the start time for statistics
         self.stats['start_time'] = time.time()
+
+        # Optimize extensions based on target context
+        optimized_extensions = self.extension_optimizer.optimize_extensions(
+            self.extensions, target_url
+        )
         
         # Always show target information, even in silent mode
         if self.use_color:
@@ -322,7 +332,7 @@ class LeftOver:
         important_extensions = ["pdf", "docx", "xlsx", "pptx", "zip", "rar", "tar.gz", "tar"]
         
         # Check important extensions regardless of the total number of extensions
-        important_exts_to_test = [ext for ext in self.extensions if ext.lower() in important_extensions]
+        important_exts_to_test = [ext for ext in optimized_extensions if ext.lower() in important_extensions]
         
         # If there are important extensions to test, do it first
         for extension in important_exts_to_test:
@@ -415,8 +425,8 @@ class LeftOver:
             
         # ***DIRECT URL VERIFICATION***
         # Direct test for each configured extension
-        if len(self.extensions) <= 5:  # Limit to avoid overhead with many extensions
-            for extension in self.extensions:
+        if len(optimized_extensions) <= 5:  # Limit to avoid overhead with many extensions
+            for extension in optimized_extensions:
                 # Skip if already tested as an important extension
                 if extension.lower() in important_extensions:
                     continue
@@ -499,15 +509,27 @@ class LeftOver:
         
         # Reset size tracker for this target
         self._size_frequency = defaultdict(int)
-        
+
+        # Enhance backup words with domain-based wordlist if enabled
+        enhanced_backup_words = self.backup_words
+        if hasattr(self, 'domain_wordlist') and self.domain_wordlist and self.brute_mode:
+            if self.verbose:
+                logger.info(f"Enhancing wordlist with domain-based words from {target_url}")
+            enhanced_backup_words = self.domain_generator.enhance_existing_wordlist(
+                enhanced_backup_words, target_url
+            )
+            if self.verbose:
+                logger.info(f"Wordlist enhanced: {len(self.backup_words)} -> {len(enhanced_backup_words)} words")
+
         # Generate base URLs for testing - using the optimized version of generate_test_urls
         test_urls, self._main_page, self.baseline_responses = generate_test_urls(
-            self.http_client, 
+            self.http_client,
             target_url,
-            self.brute_mode, 
-            self.backup_words,
+            self.brute_mode,
+            enhanced_backup_words,
             self.verbose,
-            self.brute_recursive
+            self.brute_recursive,
+            self.domain_wordlist
         )
         
         if not test_urls:
@@ -539,10 +561,24 @@ class LeftOver:
                         # Create mapping of futures to arguments
                         futures = {}
                         for base_url in batch:
-                            # For each URL, test all extensions in parallel
-                            for ext in self.extensions:
-                                future = executor.submit(self.test_url, base_url, ext, test_type)
-                                futures[future] = (base_url, ext)
+                            # Check if URL already has an extension (from domain wordlist generation)
+                            url_path = base_url.split('/')[-1]  # Get the last part of the URL
+                            has_extension = False
+
+                            if '.' in url_path:
+                                parts = url_path.split('.')
+                                if len(parts) >= 2 and 2 <= len(parts[-1]) <= 5 and parts[-1].isalnum():
+                                    has_extension = True
+
+                            if has_extension:
+                                # URL already has extension, test it directly without adding more extensions
+                                future = executor.submit(self._test_single_url, base_url, "", test_type)
+                                futures[future] = (base_url, "")
+                            else:
+                                # For each URL without extension, test all extensions in parallel
+                                for ext in optimized_extensions:
+                                    future = executor.submit(self.test_url, base_url, ext, test_type)
+                                    futures[future] = (base_url, ext)
                         
                         # Process results as they are completed
                         for future in concurrent.futures.as_completed(futures):
@@ -900,6 +936,11 @@ class LeftOver:
             'start_time': time.time(),
             'end_time': 0
         }
+
+        # Optimize extensions based on target context
+        optimized_extensions = self.extension_optimizer.optimize_extensions(
+            self.extensions, target_url
+        )
         
         # Display target information
         if self.use_color:
@@ -917,15 +958,27 @@ class LeftOver:
         
         # Reset size tracker for this target
         self._size_frequency = defaultdict(int)
-        
+
+        # Enhance backup words with domain-based wordlist if enabled
+        enhanced_backup_words = self.backup_words
+        if hasattr(self, 'domain_wordlist') and self.domain_wordlist and self.brute_mode:
+            if self.verbose:
+                logger.info(f"Enhancing wordlist with domain-based words from {target_url}")
+            enhanced_backup_words = self.domain_generator.enhance_existing_wordlist(
+                self.backup_words, target_url
+            )
+            if self.verbose:
+                logger.info(f"Wordlist enhanced: {len(self.backup_words)} -> {len(enhanced_backup_words)} words")
+
         # Generate base URLs for testing
         test_urls, self._main_page, self.baseline_responses = generate_test_urls(
-            self.http_client, 
+            self.http_client,
             target_url,
-            self.brute_mode, 
-            self.backup_words,
+            self.brute_mode,
+            enhanced_backup_words,
             self.verbose,
-            self.brute_recursive
+            self.brute_recursive,
+            self.domain_wordlist
         )
         
         if not test_urls:
@@ -952,7 +1005,7 @@ class LeftOver:
                     futures = {}
                     for base_url in batch:
                         # For each URL, test all extensions in parallel
-                        for ext in self.extensions:
+                        for ext in optimized_extensions:
                             future = executor.submit(self.test_url, base_url, ext, test_type)
                             futures[future] = (base_url, ext)
                     
@@ -1004,6 +1057,10 @@ class LeftOver:
         print_banner(self.use_color, self.silent)
         
         info_text = f"Version: {VERSION} | Threads: {self.max_workers} | Extensions: {len(self.extensions)}"
+
+        # Add domain wordlist info if enabled
+        if hasattr(self, 'domain_wordlist') and self.domain_wordlist:
+            info_text += " | Domain Wordlist: Enabled"
         
         # Now we will pass the number of words to the info panel
         # instead of including it directly in the text

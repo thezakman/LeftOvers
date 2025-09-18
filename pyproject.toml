@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "LeftOvers"
-version = "1.2.4"
+version = "1.2.6"
 description = "An advanced scanner to find residual files on web servers"
 readme = "README.md"
 authors = [
