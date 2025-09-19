@@ -31,8 +31,22 @@ from rich import box
  
 from utils.file_utils import format_size
 
-# Initialize Rich console with colors enabled
-console = Console(force_terminal=True, width=120)
+def get_terminal_width():
+    """Get the terminal width, with fallback if detection fails."""
+    try:
+        # Try to get terminal size
+        import shutil
+        width, _ = shutil.get_terminal_size()
+        # Use actual terminal width, but ensure minimum width for readability
+        # Only enforce minimum if the terminal is really narrow (less than 80)
+        return max(width, 80)
+    except:
+        # Fallback to 120 if terminal width detection fails
+        return 120
+
+# Initialize Rich console with colors enabled and auto-detected terminal width
+# Note: Rich Console will auto-detect terminal width if no width is specified
+console = Console(force_terminal=True)
 
 def print_banner(use_color=True, silent=False):
     """Print the ASCII banner for the application."""
@@ -96,8 +110,14 @@ def print_results_table(results, use_color=True, max_size_mb=50):
     if not results:
         return
 
+    # Calculate dynamic URL column width based on terminal width
+    terminal_width = get_terminal_width()
+    # Reserve space for other columns: Status(8) + Size(10) + Type(24) + Notes(20) + borders/padding(~15)
+    reserved_width = 8 + 10 + 24 + 20 + 15
+    url_max_width = max(terminal_width - reserved_width, 60)  # Minimum 60 chars for URL
+
     table = Table(title="Scan Results", box=box.ROUNDED, show_header=True, header_style="bold")
-    table.add_column("URL", style="cyan" if use_color else "", no_wrap=False, max_width=80)
+    table.add_column("URL", style="cyan" if use_color else "", no_wrap=False, max_width=url_max_width)
     table.add_column("Status", style="magenta" if use_color else "", width=8, justify="center")
     table.add_column("Size", style="green" if use_color else "", width=10, justify="right")
     table.add_column("Type", style="blue" if use_color else "", width=24)
@@ -146,9 +166,9 @@ def print_results_table(results, use_color=True, max_size_mb=50):
         # Simplify content type for display
         content_type = _format_content_type(content_type)
         
-        # Truncate URL if too long
-        if len(url) > 80:
-            url = url[:77] + "..."
+        # Truncate URL if too long based on dynamic width
+        if len(url) > url_max_width:
+            url = url[:url_max_width-3] + "..."
             
         # Apply special style for large files or false positives
         url_style = ""
@@ -222,9 +242,12 @@ def format_and_print_result(console, result, use_color=True, verbose=False, sile
     """Format and print a result with colors according to HTTP status."""
     if not result or silent:
         return
-        
+
     # Import SUCCESS_STATUSES only when needed to avoid circular imports
     from app_settings import SUCCESS_STATUSES
+
+    # Get current terminal width for intelligent formatting
+    terminal_width = console.width
     
     # Get file size in MB (if available)
     file_size_mb = None
@@ -278,7 +301,58 @@ def format_and_print_result(console, result, use_color=True, verbose=False, sile
         if result.status_code == 206:
             details += " [cyan][Partial Content][/cyan]"
 
-        line = f"{result.url} {details}"
+        # For narrow terminals, use more compact formatting
+        if terminal_width < 100:
+            # Create a more compact format for narrow terminals
+            # Abbreviate some parts to save space
+            compact_details = f"({result.content_type.split(';')[0][:15]}, "
+
+            # Format size more compactly
+            if hasattr(result, 'content_length'):
+                if result.content_length > 1024 * 1024:
+                    size_str = f"{file_size_mb:.1f}MB"
+                else:
+                    size_str = f"{result.content_length}B"
+            else:
+                size_str = "?B"
+
+            compact_details += f"{size_str}, "
+
+            # Add status with color
+            if result.status_code in SUCCESS_STATUSES:
+                status_style = "bold green"
+            elif result.status_code in (401, 403):
+                status_style = "yellow"
+            elif result.status_code >= 400:
+                status_style = "red"
+            else:
+                status_style = "cyan"
+
+            compact_details += f"[{status_style}]{result.status_code}[/{status_style}])"
+
+            # Add important indicators
+            if hasattr(result, 'false_positive') and result.false_positive:
+                compact_details += " [yellow][FP][/yellow]"
+            if large_file:
+                compact_details += " [yellow][LARGE][/yellow]"
+            if result.status_code == 206:
+                compact_details += " [cyan][206][/cyan]"
+
+            # Now check if this compact version fits
+            import re
+            compact_plain = re.sub(r'\[/?[a-z ]+\]', '', compact_details)
+            compact_width = len(compact_plain)
+
+            url_space = terminal_width - compact_width - 1  # -1 for space
+            if len(result.url) > url_space > 20:
+                # Truncate URL to fit
+                truncated_url = result.url[:url_space-3] + "..."
+                line = f"{truncated_url} {compact_details}"
+            else:
+                line = f"{result.url} {compact_details}"
+        else:
+            # Original format for wide terminals
+            line = f"{result.url} {details}"
         
         if result.status_code == 404:
             if verbose:
@@ -311,8 +385,23 @@ def format_and_print_result(console, result, use_color=True, verbose=False, sile
         # Add partial content indicator for 206 responses
         if result.status_code == 206:
             details += " [Partial Content]"
-            
-        line = f"{result.url} {details}"
+
+        # Calculate if we need to truncate the URL to fit in the terminal
+        full_line_length = len(result.url) + len(details) + 1  # +1 for space
+
+        # If line is too long, intelligently truncate the URL
+        if full_line_length > terminal_width:
+            # Calculate how much space we need for details (including some padding)
+            details_length = len(details) + 1  # +1 for space
+            max_url_length = terminal_width - details_length - 3  # -3 for "..."
+
+            if max_url_length > 30:  # Only truncate if we have reasonable space left
+                truncated_url = result.url[:max_url_length] + "..."
+                line = f"{truncated_url} {details}"
+            else:
+                line = f"{result.url} {details}"  # Let it wrap if too constrained
+        else:
+            line = f"{result.url} {details}"
         
         # Only print relevant results in non-color mode
         if result.status_code != 404 or verbose:

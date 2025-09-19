@@ -187,11 +187,12 @@ def _extract_text_content(content: bytes) -> str:
         return ""
 
 def check_false_positive(
-        result: ScanResult, 
-        response_content: bytes, 
+        result: ScanResult,
+        response_content: bytes,
         baseline_responses: Dict[int, list],
-        main_page: Dict[str, Any], 
-        size_frequency: Dict[str, int]) -> Tuple[bool, str]:
+        main_page: Dict[str, Any],
+        size_frequency: Dict[str, int],
+        hash_frequency: Dict[str, set] = None) -> Tuple[bool, str]:
     """
     Check if a result is likely a false positive using multiple advanced heuristics.
     
@@ -201,7 +202,8 @@ def check_false_positive(
         baseline_responses: Dictionary of baseline responses keyed by status code
         main_page: Information about the main page response
         size_frequency: Dictionary tracking frequency of response sizes by status
-        
+        hash_frequency: Dictionary tracking content hashes and the URLs that returned them
+
     Returns:
         Tuple of (is_false_positive: bool, reason: str)
     """
@@ -210,6 +212,14 @@ def check_false_positive(
     # Calculate content hash for comparison - only once
     content_hash = calculate_content_hash(response_content)
     result.content_hash = content_hash
+
+    # Track hash frequency across different URLs to detect same content for different extensions
+    if hash_frequency is None:
+        hash_frequency = {}
+
+    if content_hash not in hash_frequency:
+        hash_frequency[content_hash] = set()
+    hash_frequency[content_hash].add(result.url)
     
     # Skip false positive detection for zero-sized responses
     if result.content_length == 0:
@@ -242,16 +252,50 @@ def check_false_positive(
     if size_key not in size_frequency:
         size_frequency[size_key] = 0
     size_frequency[size_key] += 1
+
+    # Check if same content hash is returned for multiple different file extensions
+    if len(hash_frequency[content_hash]) >= 3:
+        # Extract file extensions from URLs with this hash
+        extensions = set()
+        for url in hash_frequency[content_hash]:
+            if '.' in url:
+                ext = url.split('.')[-1].lower()
+                if len(ext) <= 5:  # Reasonable extension length
+                    extensions.add(ext)
+
+        # If we have the same content for 3+ different extensions, it's likely a generic response
+        if len(extensions) >= 3:
+            return True, f"Same content returned for multiple file extensions: {', '.join(sorted(extensions))}"
     
     # Cache the extracted text content for reuse in multiple comparisons
     text_content = None
     if "text" in result.content_type.lower() and response_content:
         text_content = _extract_text_content(response_content)
     
-    # Multiple identical responses with error codes are likely generic error pages
-    if result.status_code >= 400 and size_frequency[size_key] >= 2:
-        return True, f"Multiple identical responses with status {result.status_code}"
+    # Multiple identical responses with same size/content-type are likely generic error pages
+    # This applies to both error codes AND success codes that might be returning error content
+    if size_frequency[size_key] >= 3:
+        # For success codes, be more careful - check if it's really an error page
+        if result.status_code in SUCCESS_STATUSES:
+            # If it's a success code but returning HTML content, it might be a custom error page
+            if "text/html" in result.content_type.lower() and result.content_length < 2000:
+                # Small HTML responses with success codes that repeat are suspicious
+                return True, f"Multiple identical small HTML responses with status {result.status_code} (likely custom error page)"
+            # For non-HTML content or larger files, require more repetitions
+            elif size_frequency[size_key] >= 5:
+                return True, f"Multiple identical responses with status {result.status_code}"
+        else:
+            # For error codes, 3 repetitions is enough
+            return True, f"Multiple identical responses with status {result.status_code}"
     
+    # Enhanced baseline comparison for success codes returning same content
+    if result.status_code in SUCCESS_STATUSES and baseline_responses:
+        # Check if this response matches any baseline response (especially 404s)
+        for baseline_status, baselines in baseline_responses.items():
+            for baseline in baselines:
+                if content_hash == baseline.get("content_hash"):
+                    return True, f"Response hash matches baseline {baseline_status} response (server returns same content for non-existent files)"
+
     # Check against baseline 404 responses for custom error pages
     if result.status_code >= 400 and 404 in baseline_responses and text_content:
         for baseline in baseline_responses[404]:
@@ -266,11 +310,11 @@ def check_false_positive(
                 if similarity > false_positive_threshold:
                     return True, f"Response text is {similarity:.0%} similar to 404 error page"
     
-    # Compare with main page to detect generic responses
+    # Compare with main page to detect generic responses and SPA fallbacks
     if main_page and content_hash:
         # Exact hash match is a strong indicator
         if content_hash == main_page.get("hash"):
-            return True, "Response hash matches main page (site returns same content)"
+            return True, "Response hash matches main page (SPA fallback or site returns same content)"
         
         # Special treatment for 200/206 responses - these are important but need careful validation
         if result.status_code in SUCCESS_STATUSES:
@@ -303,6 +347,17 @@ def check_false_positive(
         if is_binary:
             # Binary content with success code is very likely a real file
             return False, ""
+
+    # Check for SPA (Single Page Application) fallback behavior
+    if result.status_code in SUCCESS_STATUSES and response_content:
+        try:
+            # Use raw HTML content for SPA detection, not the stripped text
+            html_content = response_content.decode('utf-8', errors='ignore')
+            spa_indicators = _check_spa_fallback(html_content, result.url)
+            if spa_indicators:
+                return True, f"Detected SPA fallback: {spa_indicators}"
+        except:
+            pass
 
     # Check for legitimate leftover/backup patterns
     is_likely_leftover = _is_likely_leftover_file(result, response_content)
@@ -581,3 +636,79 @@ def _is_likely_leftover_file(result: ScanResult, response_content: bytes) -> boo
 
     # If 2 or more indicators, consider it a likely leftover
     return score >= 2
+
+def _check_spa_fallback(html_content: str, url: str) -> str:
+    """
+    Check if the response appears to be a Single Page Application fallback.
+
+    Args:
+        html_content: Raw HTML content from the response
+        url: The requested URL
+
+    Returns:
+        String describing SPA indicators if detected, empty string otherwise
+    """
+    # Get the file extension from the URL
+    url_lower = url.lower()
+    requested_extension = ""
+    if '.' in url:
+        requested_extension = url.split('.')[-1].lower()
+
+    # Only check for SPA fallback if requesting a non-HTML file
+    # (SPAs should not return HTML for actual HTML file requests)
+    html_extensions = {'html', 'htm', 'php', 'asp', 'aspx', 'jsp'}
+    if requested_extension in html_extensions:
+        return ""
+
+    # Common SPA indicators in HTML content
+    spa_patterns = [
+        # React, Vue, Angular app root elements
+        ('id="root"', 'React app root element'),
+        ('id="app"', 'Vue/generic app root element'),
+        ('<div id="root"', 'React root div'),
+        ('<div id="app"', 'App root div'),
+        ('ng-app', 'AngularJS app'),
+
+        # Common SPA build artifacts
+        ('src="/assets/', 'Vite/modern build assets'),
+        ('src="/static/', 'Create React App static assets'),
+        ('crossorigin src=', 'Modern module script'),
+        ('/assets/index-', 'Vite build pattern'),
+
+        # Meta tags common in SPAs
+        ('name="viewport"', 'SPA viewport meta tag'),
+        ('type="module"', 'ES6 module script'),
+
+        # Common SPA frameworks/libraries
+        ('react', 'React framework reference'),
+        ('vue', 'Vue framework reference'),
+        ('angular', 'Angular framework reference'),
+
+        # Build tool signatures
+        ('webpack', 'Webpack bundler'),
+        ('vite', 'Vite bundler'),
+        ('parcel', 'Parcel bundler')
+    ]
+
+    detected_indicators = []
+    html_lower = html_content.lower()
+
+    for pattern, description in spa_patterns:
+        if pattern in html_lower:
+            detected_indicators.append(description)
+
+    # Also check for file extension mismatch with HTML content
+    non_html_extensions = {
+        'zip', 'rar', 'tar', 'gz', 'pdf', 'doc', 'docx', 'xls', 'xlsx',
+        'ppt', 'pptx', 'json', 'xml', 'txt', 'csv', 'sql', 'bak', 'log'
+    }
+
+    if requested_extension in non_html_extensions:
+        # If we're requesting a binary/data file but getting HTML with SPA patterns
+        if any(indicator in html_lower for indicator, _ in spa_patterns[:6]):  # Check main SPA patterns
+            detected_indicators.append(f"HTML content returned for .{requested_extension} file")
+
+    if len(detected_indicators) >= 2:
+        return f"SPA serving HTML for .{requested_extension} request ({', '.join(detected_indicators[:3])})"
+
+    return ""
