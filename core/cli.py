@@ -8,8 +8,9 @@ import argparse
 import traceback
 import signal
 
+from app_settings import VERSION
 from core.config import (
-    VERSION, DEFAULT_TIMEOUT, DEFAULT_THREADS, DEFAULT_EXTENSIONS, 
+    DEFAULT_TIMEOUT, DEFAULT_THREADS, DEFAULT_EXTENSIONS,
     DEFAULT_BACKUP_WORDS, DEFAULT_HEADERS
 )
 from core.scanner import LeftOver

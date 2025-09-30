@@ -2,10 +2,11 @@
 # -*- coding: utf-8 -*-
 
 from setuptools import setup, find_packages
+from app_settings import VERSION
 
 setup(
     name="LeftOvers",
-    version="1.2.5",  
+    version=VERSION,  
     description="An advanced scanner to find residual files on web servers",
     author="TheZakMan",
     packages=find_packages(".") + [""],

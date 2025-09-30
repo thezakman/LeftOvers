@@ -10,8 +10,9 @@ import time
 import re
 import tldextract
 
+from app_settings import VERSION
 from core.config import (
-    VERSION, DEFAULT_TIMEOUT, DEFAULT_THREADS, DEFAULT_EXTENSIONS, 
+    DEFAULT_TIMEOUT, DEFAULT_THREADS, DEFAULT_EXTENSIONS,
     DEFAULT_BACKUP_WORDS, DEFAULT_HEADERS, USER_AGENTS
 )
 from core.result import ScanResult

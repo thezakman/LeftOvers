@@ -4,11 +4,10 @@ Scanner-specific configurations and constants for the LeftOvers scanner.
 
 # Import global settings
 from app_settings import (
-    VERSION, 
-    DEFAULT_TIMEOUT, 
-    DEFAULT_THREADS, 
+    DEFAULT_TIMEOUT,
+    DEFAULT_THREADS,
     MAX_FILE_SIZE_MB,
-    USER_AGENTS, 
+    USER_AGENTS,
     DEFAULT_USER_AGENT,
     IGNORE_CONTENT
 )
