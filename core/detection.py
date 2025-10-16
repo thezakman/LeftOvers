@@ -6,9 +6,7 @@ import re
 import random
 import hashlib
 import difflib
-import time
 from typing import Dict, Tuple, Any, Set
-from functools import lru_cache
 import sys
 
 # Add workaround for pkg_resources issues
@@ -160,27 +158,30 @@ def establish_baseline(http_client: HttpClient, base_url: str, verbose: bool = F
     
     return main_page, baseline_responses
 
-@lru_cache(maxsize=32)
 def _extract_text_content(content: bytes) -> str:
     """
-    Extract text content from HTML using regex (cached for performance).
-    
+    Extract text content from HTML using regex.
+
     Args:
         content: HTML content as bytes
-        
+
     Returns:
         Text content extracted from HTML
+
+    Note:
+        Cache removed because bytes are not hashable. For large content,
+        the extraction is fast enough with regex (~1ms for typical HTML).
     """
     try:
         # Convert bytes to string
         text = content.decode('utf-8', errors='ignore')
-        
+
         # Remove HTML tags using regex
         text = re.sub(r'<[^>]+>', ' ', text)
-        
+
         # Normalize whitespace
         text = re.sub(r'\s+', ' ', text).strip()
-        
+
         return text
     except Exception as e:
         logger.debug(f"Error extracting text content: {str(e)}")

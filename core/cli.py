@@ -68,6 +68,8 @@ def parse_arguments():
     parser.add_argument("-o", "--output", help="File to save results (JSON)")
     parser.add_argument("--output-per-url", action="store_true", help="Create a separate output file for each URL (when used with --list)")
     parser.add_argument("--test-index", action="store_true", help="Test for index.{extension} on domain URLs")
+    parser.add_argument("--rate-limit", type=float, help="Maximum requests per second (e.g., 10 for 10 req/s, 0.5 for 1 req per 2s)")
+    parser.add_argument("--delay", type=int, help="Delay in milliseconds between requests (alternative to rate-limit)")
     
     # Brute force options
     parser.add_argument("-b", "--brute", action="store_true", help="Enable brute force mode with common backup words (recommended for leftover discovery)")
@@ -101,6 +103,16 @@ def configure_scanner_from_args(args):
     # Check for incompatible arguments
     if args.verbose and args.silent:
         raise ValueError("Cannot use --verbose and --silent simultaneously")
+
+    # Validate rate limiting options
+    if args.rate_limit and args.delay:
+        raise ValueError("Cannot use both --rate-limit and --delay. Choose one.")
+
+    if args.rate_limit and args.rate_limit <= 0:
+        raise ValueError("--rate-limit must be greater than 0")
+
+    if args.delay and args.delay < 0:
+        raise ValueError("--delay must be greater than or equal to 0")
     
     # Configure color usage
     use_color = not (args.no_color or os.environ.get("NO_COLOR"))
@@ -141,6 +153,10 @@ def configure_scanner_from_args(args):
     # Configure filters
     status_filter = parse_status_codes(args.status) if args.status else None
     
+    # Calculate rate limit parameters
+    rate_limit = args.rate_limit if hasattr(args, 'rate_limit') else None
+    delay_ms = args.delay if hasattr(args, 'delay') else None
+
     # Initialize scanner
     scanner = LeftOver(
         extensions=extensions,
@@ -158,7 +174,9 @@ def configure_scanner_from_args(args):
         rotate_user_agent=args.rotate_agents,
         test_index=args.test_index,
         ignore_content=args.ignore_content,
-        disable_fp=args.no_fp
+        disable_fp=args.no_fp,
+        rate_limit=rate_limit,
+        delay_ms=delay_ms
     )
             
     # Add brute force capability if requested, including fast-scan mode

@@ -9,6 +9,7 @@ from collections import defaultdict
 import time
 import re
 import tldextract
+import threading
 
 from app_settings import VERSION
 from core.config import (
@@ -38,8 +39,8 @@ BRUTE_RECURSIVE_PATTERN = re.compile(r'Brute Force Recursive:\s+(.+)')
 class LeftOver:
     """Main scanner for finding leftover files on web servers (optimized version)."""
     
-    def __init__(self, 
-                 extensions: List[str] = None, 
+    def __init__(self,
+                 extensions: List[str] = None,
                  timeout: int = DEFAULT_TIMEOUT,
                  threads: int = DEFAULT_THREADS,
                  headers: Dict[str, str] = None,
@@ -54,7 +55,9 @@ class LeftOver:
                  rotate_user_agent: bool = False,
                  test_index: bool = False,
                  ignore_content: List[str] = None,
-                 disable_fp: bool = False):
+                 disable_fp: bool = False,
+                 rate_limit: float = None,
+                 delay_ms: int = None):
         """Initialize the scanner with the provided settings."""
         self.extensions = extensions or DEFAULT_EXTENSIONS
         self.extension_optimizer = ExtensionOptimizer()
@@ -92,12 +95,14 @@ class LeftOver:
         global logger
         logger = setup_logger(verbose, silent)
         
-        # HTTP client for requests - optimized
+        # HTTP client for requests - optimized with rate limiting
         self.http_client = HttpClient(
             headers=self.headers,
             timeout=self.timeout,
             verify_ssl=self.verify_ssl,
-            rotate_user_agent=self.rotate_user_agent
+            rotate_user_agent=self.rotate_user_agent,
+            rate_limit=rate_limit,
+            delay_ms=delay_ms
         )
         
         # Optimization: use defaultdict for false positive control and size tracking
@@ -106,6 +111,12 @@ class LeftOver:
         self._size_frequency = defaultdict(int)
         self._hash_frequency = defaultdict(set)
         self._main_page = None
+
+        # Thread-safe locks for shared dictionaries (prevent race conditions)
+        self._size_frequency_lock = threading.Lock()
+        self._hash_frequency_lock = threading.Lock()
+        self._found_urls_lock = threading.Lock()
+        self._results_lock = threading.Lock()
         
         # Global sanity check results
         self._global_sanity_check_results = {}
@@ -125,7 +136,125 @@ class LeftOver:
             'start_time': 0,
             'end_time': 0
         }
+
+        # Adaptive threading configuration
+        self._enable_adaptive_threading = True
+        self._initial_threads = threads
+        self._min_threads = max(2, threads // 4)  # Minimum 2 or 25% of initial
+        self._max_threads = min(threads * 2, 50)  # Maximum 2x initial or 50
+        self._latency_samples = []
+        self._max_latency_samples = 20  # Track last 20 requests
+        self._adaptive_lock = threading.Lock()
+        self._adjustment_interval = 50  # Adjust every 50 requests
     
+    def _track_request_latency(self, latency: float) -> None:
+        """
+        Track request latency and adjust thread count if needed.
+
+        Args:
+            latency: Request latency in seconds
+        """
+        if not self._enable_adaptive_threading:
+            return
+
+        with self._adaptive_lock:
+            # Add latency sample
+            self._latency_samples.append(latency)
+
+            # Keep only recent samples
+            if len(self._latency_samples) > self._max_latency_samples:
+                self._latency_samples.pop(0)
+
+            # Adjust threads every N requests
+            if self.stats['requests'] % self._adjustment_interval == 0 and len(self._latency_samples) >= 10:
+                self._adjust_thread_count()
+
+    def _adjust_thread_count(self) -> None:
+        """
+        Adjust thread count based on average latency.
+
+        Fast targets (low latency) get more threads.
+        Slow targets (high latency) get fewer threads.
+        """
+        if not self._latency_samples:
+            return
+
+        # Calculate average latency in milliseconds
+        avg_latency = sum(self._latency_samples) / len(self._latency_samples) * 1000
+
+        current_threads = self.max_workers
+        new_threads = current_threads
+
+        # Thresholds for adjustment
+        FAST_THRESHOLD = 100  # < 100ms = fast target
+        MEDIUM_THRESHOLD = 300  # 100-300ms = medium target
+        SLOW_THRESHOLD = 500  # > 500ms = slow target
+
+        if avg_latency < FAST_THRESHOLD:
+            # Fast target: increase threads by 20% (gradual increase)
+            new_threads = min(int(current_threads * 1.2), self._max_threads)
+            adjustment_reason = f"fast target ({avg_latency:.0f}ms avg latency)"
+
+        elif avg_latency > SLOW_THRESHOLD:
+            # Slow target: decrease threads by 30% (more aggressive decrease)
+            new_threads = max(int(current_threads * 0.7), self._min_threads)
+            adjustment_reason = f"slow target ({avg_latency:.0f}ms avg latency)"
+
+        elif avg_latency > MEDIUM_THRESHOLD:
+            # Medium-slow target: decrease threads by 15%
+            new_threads = max(int(current_threads * 0.85), self._min_threads)
+            adjustment_reason = f"medium-slow target ({avg_latency:.0f}ms avg latency)"
+
+        if new_threads != current_threads:
+            self.max_workers = new_threads
+            if self.verbose:
+                logger.info(f"Adaptive threading: {current_threads} → {new_threads} threads ({adjustment_reason})")
+
+    def _thread_safe_add_result(self, scan_result: ScanResult) -> None:
+        """
+        Thread-safe method to add a result to the results list.
+
+        Args:
+            scan_result: The scan result to add
+        """
+        with self._results_lock:
+            self.results.append(scan_result)
+
+    def _thread_safe_add_found_url(self, url: str) -> None:
+        """
+        Thread-safe method to add a URL to the found URLs set.
+
+        Args:
+            url: The URL to add
+        """
+        with self._found_urls_lock:
+            self.found_urls.add(url)
+
+    def _thread_safe_check_false_positive(
+            self,
+            result: ScanResult,
+            response_content: bytes) -> Tuple[bool, str]:
+        """
+        Thread-safe wrapper for check_false_positive.
+
+        Args:
+            result: ScanResult object
+            response_content: Raw response content bytes
+
+        Returns:
+            Tuple of (is_false_positive, reason)
+        """
+        # Use locks to protect shared dictionaries during false positive check
+        with self._size_frequency_lock, self._hash_frequency_lock:
+            return check_false_positive(
+                result,
+                response_content,
+                self.baseline_responses,
+                self._main_page,
+                self._size_frequency,
+                self._hash_frequency
+            )
+
     def test_url(self, base_url: str, extension: str, test_type: str) -> Optional[ScanResult]:
         """Test a single URL with a given extension - Optimized version."""
         # Check if we are testing only a domain or a specific path efficiently
@@ -202,7 +331,10 @@ class LeftOver:
             # Calculate request time
             req_time = time.time() - start_time
             self.stats['total_time'] += req_time
-            
+
+            # Track latency for adaptive threading
+            self._track_request_latency(req_time)
+
             if not result["success"]:
                 return None
                 
@@ -262,26 +394,22 @@ class LeftOver:
             if status_code == 206:
                 scan_result.partial_content = True
             
-            # 6. Finally, perform false positive check (most costly)
-            is_false_positive, reason = check_false_positive(
+            # 6. Finally, perform false positive check (most costly) - THREAD SAFE
+            is_false_positive, reason = self._thread_safe_check_false_positive(
                 scan_result,
-                content,
-                self.baseline_responses,
-                self._main_page,
-                self._size_frequency,
-                self._hash_frequency
+                content
             )
             scan_result.false_positive = is_false_positive
             scan_result.false_positive_reason = reason
-            
+
             # Special handling for successful status codes (200, 206)
             # These are important but we still need to respect false positive detection
             if status_code in SUCCESS_STATUSES:
                 # Only bypass false positive detection if explicitly disabled
                 if self.disable_fp or not is_false_positive:
                     self.stats['hits'] += 1
-                    self.found_urls.add(scan_result.url)
-                    self.results.append(scan_result)
+                    self._thread_safe_add_found_url(scan_result.url)
+                    self._thread_safe_add_result(scan_result)
                     return scan_result
                 else:
                     # Even success codes can be false positives (like SPA fallbacks)
@@ -292,15 +420,15 @@ class LeftOver:
             if self.disable_fp:
                 # We still keep the classification for informational purposes
                 self.stats['hits'] += 1
-                self.found_urls.add(scan_result.url)
-                self.results.append(scan_result)
+                self._thread_safe_add_found_url(scan_result.url)
+                self._thread_safe_add_result(scan_result)
                 return scan_result
-            
+
             # If false positive detection is not disabled, only report if not FP
             if not is_false_positive:
                 self.stats['hits'] += 1
-                self.found_urls.add(scan_result.url)
-                self.results.append(scan_result)
+                self._thread_safe_add_found_url(scan_result.url)
+                self._thread_safe_add_result(scan_result)
                 return scan_result
                 
             return None
@@ -312,6 +440,206 @@ class LeftOver:
                 logger.debug(f"Error testing URL {full_url}: {error_type}: {str(e)}")
             return None
     
+    def _perform_important_extension_tests(self, target_url: str, optimized_extensions: List[str]) -> bool:
+        """
+        Perform direct tests for important file extensions (PDF, Office docs, archives).
+
+        Args:
+            target_url: The target URL to test
+            optimized_extensions: List of extensions optimized for the target
+
+        Returns:
+            True if any important files were found, False otherwise
+        """
+        important_extensions = ["pdf", "docx", "xlsx", "pptx", "zip", "rar", "tar.gz", "tar"]
+        important_exts_to_test = [ext for ext in optimized_extensions if ext.lower() in important_extensions]
+
+        found_files = False
+
+        for extension in important_exts_to_test:
+            # Determine if it's a domain-only URL
+            is_domain_only = '/' not in target_url[8:] if target_url.startswith('http://') else (
+                '/' not in target_url[9:] if target_url.startswith('https://') else False
+            )
+
+            if is_domain_only and not target_url.endswith('/'):
+                direct_url = f"{target_url}/.{extension}"
+            else:
+                direct_url = f"{target_url}.{extension}"
+
+            if self.verbose:
+                logger.debug(f"HIGH PRIORITY: Testing direct URL for important file: {direct_url}")
+
+            try:
+                start_time = time.time()
+
+                import requests
+                special_session = requests.Session()
+                special_session.verify = False
+
+                headers = self.http_client.session.headers.copy()
+                headers['Range'] = 'bytes=0-8191'
+
+                response = special_session.get(
+                    direct_url,
+                    headers=headers,
+                    timeout=self.timeout,
+                    allow_redirects=True
+                )
+
+                req_time = time.time() - start_time
+                self.stats['requests'] += 1
+                self.stats['total_time'] += req_time
+
+                if response.status_code in [200, 206]:
+                    content_type = response.headers.get('Content-Type', 'Unknown')
+                    content_type_base = content_type.split(';')[0].strip()
+
+                    if self.ignore_content and any(ignore == content_type_base for ignore in self.ignore_content):
+                        if self.verbose:
+                            logger.debug(f"Ignoring result with filtered content type: {content_type_base}")
+                        continue
+
+                    if 'Content-Length' in response.headers:
+                        try:
+                            content_length = int(response.headers['Content-Length'])
+                        except (ValueError, TypeError):
+                            content_length = len(response.content) if response.content else 0
+                    else:
+                        content_length = len(response.content) if response.content else 0
+
+                    scan_result = ScanResult(
+                        url=direct_url,
+                        status_code=response.status_code,
+                        content_type=content_type,
+                        content_length=content_length,
+                        response_time=req_time,
+                        test_type="Direct URL",
+                        extension=extension
+                    )
+
+                    is_false_positive, reason = self._thread_safe_check_false_positive(
+                        scan_result,
+                        response.content
+                    )
+                    scan_result.false_positive = is_false_positive
+                    scan_result.false_positive_reason = reason
+
+                    if self.disable_fp or not is_false_positive:
+                        self.stats['hits'] += 1
+                        self._thread_safe_add_found_url(direct_url)
+                        self._thread_safe_add_result(scan_result)
+                        found_files = True
+
+                    if not self.silent:
+                        format_and_print_result(console, scan_result, self.use_color, self.verbose, self.silent)
+
+            except Exception as e:
+                if self.verbose:
+                    error_type = type(e).__name__
+                    logger.debug(f"Error testing important file {direct_url}: {error_type}: {str(e)}")
+
+        return found_files
+
+    def _perform_direct_extension_tests(self, target_url: str, optimized_extensions: List[str]) -> bool:
+        """
+        Perform direct tests for non-important extensions.
+
+        Args:
+            target_url: The target URL to test
+            optimized_extensions: List of extensions optimized for the target
+
+        Returns:
+            True if any files were found, False otherwise
+        """
+        if len(optimized_extensions) > 5:
+            return False
+
+        important_extensions = ["pdf", "docx", "xlsx", "pptx", "zip", "rar", "tar.gz", "tar"]
+        found_files = False
+
+        for extension in optimized_extensions:
+            if extension.lower() in important_extensions:
+                continue
+
+            is_domain_only = '/' not in target_url[8:] if target_url.startswith('http://') else (
+                '/' not in target_url[9:] if target_url.startswith('https://') else False
+            )
+
+            if is_domain_only and not target_url.endswith('/'):
+                direct_url = f"{target_url}/.{extension}"
+            else:
+                direct_url = f"{target_url}.{extension}"
+
+            if self.verbose:
+                logger.debug(f"Testing direct URL: {direct_url}")
+
+            try:
+                start_time = time.time()
+                result = self.http_client.get(direct_url)
+                self.stats['requests'] += 1
+
+                req_time = time.time() - start_time
+                self.stats['total_time'] += req_time
+
+                if result["success"]:
+                    response = result["response"]
+                    response_time = result["time"]
+
+                    status_code = response.status_code
+                    headers = response.headers
+                    content_type = headers.get('Content-Type', 'N/A')
+
+                    content_type_base = content_type.split(';')[0].strip()
+                    if self.ignore_content and any(ignore == content_type_base for ignore in self.ignore_content):
+                        if self.verbose:
+                            logger.debug(f"Ignoring direct URL result with filtered content type: {content_type_base}")
+                        continue
+
+                    content = response.content
+
+                    if 'Content-Length' in response.headers:
+                        try:
+                            content_length = int(response.headers['Content-Length'])
+                        except (ValueError, TypeError):
+                            content_length = len(content) if content else 0
+                    else:
+                        content_length = len(content) if content else 0
+
+                    scan_result = ScanResult(
+                        url=direct_url,
+                        status_code=status_code,
+                        content_type=content_type,
+                        content_length=content_length,
+                        response_time=response_time,
+                        test_type="Direct URL",
+                        extension=extension
+                    )
+
+                    if status_code == 200 or status_code == 206:
+                        is_false_positive, reason = self._thread_safe_check_false_positive(
+                            scan_result,
+                            content
+                        )
+                        scan_result.false_positive = is_false_positive
+                        scan_result.false_positive_reason = reason
+
+                        if self.disable_fp or not is_false_positive:
+                            self.stats['hits'] += 1
+                            self._thread_safe_add_found_url(direct_url)
+                            self._thread_safe_add_result(scan_result)
+                            found_files = True
+
+                        if not self.silent:
+                            format_and_print_result(console, scan_result, self.use_color, self.verbose, self.silent)
+
+            except Exception as e:
+                if self.verbose:
+                    error_type = type(e).__name__
+                    logger.debug(f"Error in direct test: {direct_url}: {error_type}: {str(e)}")
+
+        return found_files
+
     def process_url(self, target_url: str):
         """Process a URL, testing all extensions on all derived targets - Optimized version."""
         # Record the start time for statistics
@@ -335,212 +663,12 @@ class LeftOver:
         if self.verbose:
             from utils.debug_utils import debug_url_segments
             debug_url_segments(target_url)
-            
-        # *** DIRECT URL CHECK WITH SPECIAL HANDLING FOR PDF AND OTHER IMPORTANT FORMATS ***
-        # Always check for exact match with extension first, especially for PDF files
-        important_extensions = ["pdf", "docx", "xlsx", "pptx", "zip", "rar", "tar.gz", "tar"]
-        
-        # Check important extensions regardless of the total number of extensions
-        important_exts_to_test = [ext for ext in optimized_extensions if ext.lower() in important_extensions]
-        
-        # If there are important extensions to test, do it first
-        for extension in important_exts_to_test:
-            # Ensure target_url ends with / if it's a domain-only URL (for consistent formatting)
-            is_domain_only = '/' not in target_url[8:] if target_url.startswith('http://') else ('/' not in target_url[9:] if target_url.startswith('https://') else False)
-            if is_domain_only and not target_url.endswith('/'):
-                direct_url = f"{target_url}/.{extension}"
-            else:
-                direct_url = f"{target_url}.{extension}"
-            
-            if self.verbose:
-                logger.debug(f"HIGH PRIORITY: Testing direct URL for important file: {direct_url}")
-                
-            # Special handling for important files (force request with modified parameters)
-            try:
-                # Create a specialized request for PDF/important files
-                start_time = time.time()
-                
-                # Use a custom session for this request to ensure SSL verification is disabled
-                import requests
-                special_session = requests.Session()
-                special_session.verify = False  # Disable SSL verification
-                
-                # Add headers from our client
-                headers = self.http_client.session.headers.copy()
-                # Add Range header to get partial content for large files
-                headers['Range'] = 'bytes=0-8191'  # Get first 8KB to confirm file exists
-                
-                # Make the direct request
-                response = special_session.get(
-                    direct_url,
-                    headers=headers,
-                    timeout=self.timeout,
-                    allow_redirects=True
-                )
-                
-                # Update stats
-                req_time = time.time() - start_time
-                self.stats['requests'] += 1
-                self.stats['total_time'] += req_time
-                
-                # Check for successful or partial content (206)
-                if response.status_code in [200, 206]:
-                    # File found!
-                    content_type = response.headers.get('Content-Type', 'Unknown')
-                    
-                    # Apply content-type filter here as well before processing
-                    content_type_base = content_type.split(';')[0].strip()
-                    if self.ignore_content and any(ignore == content_type_base for ignore in self.ignore_content):
-                        if self.verbose:
-                            logger.debug(f"Ignoring result with filtered content type: {content_type_base}")
-                        continue
-                    
-                    # Try to get accurate content length
-                    if 'Content-Length' in response.headers:
-                        try:
-                            content_length = int(response.headers['Content-Length'])
-                        except (ValueError, TypeError):
-                            content_length = len(response.content) if response.content else 0
-                    else:
-                        content_length = len(response.content) if response.content else 0
-                    
-                    # Create result object
-                    scan_result = ScanResult(
-                        url=direct_url,
-                        status_code=response.status_code,
-                        content_type=content_type,
-                        content_length=content_length,
-                        response_time=req_time,
-                        test_type="Direct URL",
-                        extension=extension
-                    )
-                    
-                    # Perform false positive check for important files too
-                    is_false_positive, reason = check_false_positive(
-                        scan_result,
-                        response.content,
-                        self.baseline_responses,
-                        self._main_page,
-                        self._size_frequency,
-                        self._hash_frequency
-                    )
-                    scan_result.false_positive = is_false_positive
-                    scan_result.false_positive_reason = reason
 
-                    # Add important files to results only if not false positive (unless FP detection disabled)
-                    if self.disable_fp or not is_false_positive:
-                        self.stats['hits'] += 1
-                        self.found_urls.add(direct_url)
-                        self.results.append(scan_result)
-                    
-                    # Show result immediately
-                    if not self.silent:
-                        format_and_print_result(console, scan_result, self.use_color, self.verbose, self.silent)
-                
-            except Exception as e:
-                if self.verbose:
-                    error_type = type(e).__name__
-                    logger.debug(f"Error testing important file {direct_url}: {error_type}: {str(e)}")
-        
-        # Flag to track if we've already found files in direct testing
-        direct_check_found_files = False
-            
-        # ***DIRECT URL VERIFICATION***
-        # Direct test for each configured extension
-        if len(optimized_extensions) <= 5:  # Limit to avoid overhead with many extensions
-            for extension in optimized_extensions:
-                # Skip if already tested as an important extension
-                if extension.lower() in important_extensions:
-                    continue
-                   
-                # Ensure proper URL formatting with / for domain-only URLs 
-                is_domain_only = '/' not in target_url[8:] if target_url.startswith('http://') else ('/' not in target_url[9:] if target_url.startswith('https://') else False)
-                if is_domain_only and not target_url.endswith('/'):
-                    direct_url = f"{target_url}/.{extension}"
-                else:
-                    direct_url = f"{target_url}.{extension}"
-                    
-                if self.verbose:
-                    logger.debug(f"Testing direct URL: {direct_url}")
-                    
-                try:
-                    start_time = time.time()
-                    result = self.http_client.get(direct_url)
-                    self.stats['requests'] += 1
-                    
-                    req_time = time.time() - start_time
-                    self.stats['total_time'] += req_time
-                    
-                    if result["success"]:
-                        response = result["response"]
-                        response_time = result["time"]
-                        
-                        # Process direct response
-                        status_code = response.status_code
-                        headers = response.headers
-                        content_type = headers.get('Content-Type', 'N/A')
-                        
-                        # Apply content-type filter before processing
-                        content_type_base = content_type.split(';')[0].strip()
-                        if self.ignore_content and any(ignore == content_type_base for ignore in self.ignore_content):
-                            if self.verbose:
-                                logger.debug(f"Ignoring direct URL result with filtered content type: {content_type_base}")
-                            continue
-                        
-                        content = response.content
-                        
-                        # Get Content-Length from header which is more accurate for large files
-                        if 'Content-Length' in response.headers:
-                            try:
-                                content_length = int(response.headers['Content-Length'])
-                            except (ValueError, TypeError):
-                                content_length = len(content) if content else 0
-                        else:
-                            content_length = len(content) if content else 0
-                        
-                        # Create result object
-                        scan_result = ScanResult(
-                            url=direct_url,
-                            status_code=status_code,
-                            content_type=content_type,
-                            content_length=content_length,
-                            response_time=response_time,
-                            test_type="Direct URL",
-                            extension=extension
-                        )
-                        
-                        # Consider both 200 and 206 (Partial Content) as success
-                        if status_code == 200 or status_code == 206:
-                            # Perform false positive check
-                            is_false_positive, reason = check_false_positive(
-                                scan_result,
-                                content,
-                                self.baseline_responses,
-                                self._main_page,
-                                self._size_frequency,
-                                self._hash_frequency
-                            )
-                            scan_result.false_positive = is_false_positive
-                            scan_result.false_positive_reason = reason
+        # Perform important extension tests (PDF, Office docs, archives)
+        self._perform_important_extension_tests(target_url, optimized_extensions)
 
-                            # Add to results only if not false positive (unless FP detection disabled)
-                            if self.disable_fp or not is_false_positive:
-                                self.stats['hits'] += 1
-                                self.found_urls.add(direct_url)
-                                self.results.append(scan_result)
-                                direct_check_found_files = True
-                            
-                            # Show result immediately
-                            if not self.silent:
-                                format_and_print_result(console, scan_result, self.use_color, self.verbose, self.silent)
-                            
-                            # MODIFIED: Removed early return to continue with all tests
-                            # Now we'll continue with regular scanning even if we found a match
-                        
-                except Exception as e:
-                    if self.verbose:
-                        error_type = type(e).__name__
-                        logger.debug(f"Error in direct test: {direct_url}: {error_type}: {str(e)}")
+        # Perform direct extension tests for other extensions
+        self._perform_direct_extension_tests(target_url, optimized_extensions)
         
         # Reset size tracker for this target
         self._size_frequency = defaultdict(int)
@@ -992,211 +1120,11 @@ class LeftOver:
             from utils.debug_utils import debug_url_segments
             debug_url_segments(target_url)
 
-        # *** DIRECT URL CHECK WITH SPECIAL HANDLING FOR PDF AND OTHER IMPORTANT FORMATS ***
-        # Always check for exact match with extension first, especially for PDF files
-        important_extensions = ["pdf", "docx", "xlsx", "pptx", "zip", "rar", "tar.gz", "tar"]
+        # Perform important extension tests (PDF, Office docs, archives)
+        self._perform_important_extension_tests(target_url, optimized_extensions)
 
-        # Check important extensions regardless of the total number of extensions
-        important_exts_to_test = [ext for ext in optimized_extensions if ext.lower() in important_extensions]
-
-        # If there are important extensions to test, do it first
-        for extension in important_exts_to_test:
-            # Ensure target_url ends with / if it's a domain-only URL (for consistent formatting)
-            is_domain_only = '/' not in target_url[8:] if target_url.startswith('http://') else ('/' not in target_url[9:] if target_url.startswith('https://') else False)
-            if is_domain_only and not target_url.endswith('/'):
-                direct_url = f"{target_url}/.{extension}"
-            else:
-                direct_url = f"{target_url}.{extension}"
-
-            if self.verbose:
-                logger.debug(f"HIGH PRIORITY: Testing direct URL for important file: {direct_url}")
-
-            # Special handling for important files (force request with modified parameters)
-            try:
-                # Create a specialized request for PDF/important files
-                start_time = time.time()
-
-                # Use a custom session for this request to ensure SSL verification is disabled
-                import requests
-                special_session = requests.Session()
-                special_session.verify = False  # Disable SSL verification
-
-                # Add headers from our client
-                headers = self.http_client.session.headers.copy()
-                # Add Range header to get partial content for large files
-                headers['Range'] = 'bytes=0-8191'  # Get first 8KB to confirm file exists
-
-                # Make the direct request
-                response = special_session.get(
-                    direct_url,
-                    headers=headers,
-                    timeout=self.timeout,
-                    allow_redirects=True
-                )
-
-                # Update stats
-                req_time = time.time() - start_time
-                self.stats['requests'] += 1
-                self.stats['total_time'] += req_time
-
-                # Check for successful or partial content (206)
-                if response.status_code in [200, 206]:
-                    # File found!
-                    content_type = response.headers.get('Content-Type', 'Unknown')
-
-                    # Apply content-type filter here as well before processing
-                    content_type_base = content_type.split(';')[0].strip()
-                    if self.ignore_content and any(ignore == content_type_base for ignore in self.ignore_content):
-                        if self.verbose:
-                            logger.debug(f"Ignoring result with filtered content type: {content_type_base}")
-                        continue
-
-                    # Try to get accurate content length
-                    if 'Content-Length' in response.headers:
-                        try:
-                            content_length = int(response.headers['Content-Length'])
-                        except (ValueError, TypeError):
-                            content_length = len(response.content) if response.content else 0
-                    else:
-                        content_length = len(response.content) if response.content else 0
-
-                    # Create result object
-                    scan_result = ScanResult(
-                        url=direct_url,
-                        status_code=response.status_code,
-                        content_type=content_type,
-                        content_length=content_length,
-                        response_time=req_time,
-                        test_type="Direct URL",
-                        extension=extension
-                    )
-
-                    # Perform false positive check for important files too
-                    is_false_positive, reason = check_false_positive(
-                        scan_result,
-                        response.content,
-                        self.baseline_responses,
-                        self._main_page,
-                        self._size_frequency,
-                        self._hash_frequency
-                    )
-                    scan_result.false_positive = is_false_positive
-                    scan_result.false_positive_reason = reason
-
-                    # Add important files to results only if not false positive (unless FP detection disabled)
-                    if self.disable_fp or not is_false_positive:
-                        self.stats['hits'] += 1
-                        self.found_urls.add(direct_url)
-                        self.results.append(scan_result)
-
-                    # Show result immediately
-                    if not self.silent:
-                        format_and_print_result(console, scan_result, self.use_color, self.verbose, self.silent)
-
-            except Exception as e:
-                if self.verbose:
-                    error_type = type(e).__name__
-                    logger.debug(f"Error testing important file {direct_url}: {error_type}: {str(e)}")
-
-        # Flag to track if we've already found files in direct testing
-        direct_check_found_files = False
-
-        # ***DIRECT URL VERIFICATION***
-        # Direct test for each configured extension
-        if len(optimized_extensions) <= 5:  # Limit to avoid overhead with many extensions
-            for extension in optimized_extensions:
-                # Skip if already tested as an important extension
-                if extension.lower() in important_extensions:
-                    continue
-
-                # Ensure proper URL formatting with / for domain-only URLs
-                is_domain_only = '/' not in target_url[8:] if target_url.startswith('http://') else ('/' not in target_url[9:] if target_url.startswith('https://') else False)
-                if is_domain_only and not target_url.endswith('/'):
-                    direct_url = f"{target_url}/.{extension}"
-                else:
-                    direct_url = f"{target_url}.{extension}"
-
-                if self.verbose:
-                    logger.debug(f"Testing direct URL: {direct_url}")
-
-                try:
-                    start_time = time.time()
-                    result = self.http_client.get(direct_url)
-                    self.stats['requests'] += 1
-
-                    req_time = time.time() - start_time
-                    self.stats['total_time'] += req_time
-
-                    if result["success"]:
-                        response = result["response"]
-                        response_time = result["time"]
-
-                        # Process direct response
-                        status_code = response.status_code
-                        headers = response.headers
-                        content_type = headers.get('Content-Type', 'N/A')
-
-                        # Apply content-type filter before processing
-                        content_type_base = content_type.split(';')[0].strip()
-                        if self.ignore_content and any(ignore == content_type_base for ignore in self.ignore_content):
-                            if self.verbose:
-                                logger.debug(f"Ignoring direct URL result with filtered content type: {content_type_base}")
-                            continue
-
-                        content = response.content
-
-                        # Get Content-Length from header which is more accurate for large files
-                        if 'Content-Length' in response.headers:
-                            try:
-                                content_length = int(response.headers['Content-Length'])
-                            except (ValueError, TypeError):
-                                content_length = len(content) if content else 0
-                        else:
-                            content_length = len(content) if content else 0
-
-                        # Create result object
-                        scan_result = ScanResult(
-                            url=direct_url,
-                            status_code=status_code,
-                            content_type=content_type,
-                            content_length=content_length,
-                            response_time=response_time,
-                            test_type="Direct URL",
-                            extension=extension
-                        )
-
-                        # Consider both 200 and 206 (Partial Content) as success
-                        if status_code == 200 or status_code == 206:
-                            # Perform false positive check
-                            is_false_positive, reason = check_false_positive(
-                                scan_result,
-                                content,
-                                self.baseline_responses,
-                                self._main_page,
-                                self._size_frequency,
-                                self._hash_frequency
-                            )
-                            scan_result.false_positive = is_false_positive
-                            scan_result.false_positive_reason = reason
-
-                            # Add to results only if not false positive (unless FP detection disabled)
-                            if self.disable_fp or not is_false_positive:
-                                self.stats['hits'] += 1
-                                self.found_urls.add(direct_url)
-                                self.results.append(scan_result)
-                                direct_check_found_files = True
-
-                            # Show result immediately
-                            if not self.silent:
-                                format_and_print_result(console, scan_result, self.use_color, self.verbose, self.silent)
-
-                            # MODIFIED: Removed early return to continue with all tests
-                            # Now we'll continue with regular scanning even if we found a match
-
-                except Exception as e:
-                    if self.verbose:
-                        error_type = type(e).__name__
-                        logger.debug(f"Error in direct test: {direct_url}: {error_type}: {str(e)}")
+        # Perform direct extension tests for other extensions
+        self._perform_direct_extension_tests(target_url, optimized_extensions)
 
         # Reset size tracker for this target
         self._size_frequency = defaultdict(int)

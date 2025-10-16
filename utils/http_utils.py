@@ -10,6 +10,7 @@ import time
 from urllib.parse import urlparse
 from typing import Dict, Optional, Any, Tuple
 from functools import lru_cache
+from collections import OrderedDict
 
 import requests
 import tldextract
@@ -22,6 +23,75 @@ from app_settings import USER_AGENTS, CHUNK_SIZE, MAX_FILE_SIZE_MB, VERIFY_SSL
 
 # Suppress only the InsecureRequestWarning
 urllib3.disable_warnings(InsecureRequestWarning)
+
+class LRUCache:
+    """
+    Thread-safe LRU (Least Recently Used) cache implementation.
+
+    More efficient than FIFO as it keeps frequently accessed items in cache longer.
+    Uses OrderedDict for O(1) operations.
+    """
+
+    def __init__(self, max_size: int = 128):
+        """
+        Initialize LRU cache.
+
+        Args:
+            max_size: Maximum number of items to keep in cache
+        """
+        self.max_size = max_size
+        self.cache = OrderedDict()
+        self._lock = __import__('threading').Lock()
+
+    def get(self, key: str) -> Optional[Dict[str, Any]]:
+        """
+        Get item from cache and mark as recently used.
+
+        Args:
+            key: Cache key
+
+        Returns:
+            Cached value or None if not found
+        """
+        with self._lock:
+            if key in self.cache:
+                # Move to end to mark as recently used
+                self.cache.move_to_end(key)
+                return self.cache[key]
+            return None
+
+    def put(self, key: str, value: Dict[str, Any]) -> None:
+        """
+        Add item to cache. Removes least recently used if cache is full.
+
+        Args:
+            key: Cache key
+            value: Value to cache
+        """
+        with self._lock:
+            if key in self.cache:
+                # Update existing item and mark as recently used
+                self.cache.move_to_end(key)
+            elif len(self.cache) >= self.max_size:
+                # Remove least recently used item (first item)
+                self.cache.popitem(last=False)
+
+            self.cache[key] = value
+
+    def clear(self) -> None:
+        """Clear all items from cache."""
+        with self._lock:
+            self.cache.clear()
+
+    def __len__(self) -> int:
+        """Get current cache size."""
+        with self._lock:
+            return len(self.cache)
+
+    def __contains__(self, key: str) -> bool:
+        """Check if key is in cache."""
+        with self._lock:
+            return key in self.cache
 
 def calculate_content_hash(content: bytes) -> str:
     """
@@ -45,19 +115,21 @@ def calculate_content_hash(content: bytes) -> str:
 
 class HttpClient:
     """HTTP client for making requests with proper error handling and metrics."""
-    
-    def __init__(self, 
-                 headers: Dict[str, str] = None, 
-                 timeout: int = 5, 
+
+    def __init__(self,
+                 headers: Dict[str, str] = None,
+                 timeout: int = 5,
                  verify_ssl: bool = VERIFY_SSL,  # Use global setting as default
                  rotate_user_agent: bool = False,
                  max_retries: int = 1,
                  backoff_factor: float = 0.5,
                  use_cache: bool = True,
-                 max_cache_size: int = 128):
+                 max_cache_size: int = 128,
+                 rate_limit: float = None,
+                 delay_ms: int = None):
         """
         Initialize the HTTP client with enhanced performance options.
-        
+
         Args:
             headers: Dictionary of custom headers
             timeout: Request timeout in seconds
@@ -67,19 +139,34 @@ class HttpClient:
             backoff_factor: Exponential backoff factor between retries
             use_cache: Whether to use request caching
             max_cache_size: Maximum number of responses to cache
+            rate_limit: Maximum requests per second (e.g., 10.0 for 10 req/s)
+            delay_ms: Fixed delay in milliseconds between requests
         """
         self.headers = headers or {}
         self.timeout = timeout
         self.verify_ssl = verify_ssl  # This will now default to False based on the global setting
         self.rotate_user_agent = rotate_user_agent
         self.use_cache = use_cache
+
+        # Rate limiting setup
+        self.rate_limit = rate_limit
+        self.delay_ms = delay_ms
+        self._last_request_time = 0
+        self._rate_limit_lock = __import__('threading').Lock()
+
+        # Calculate minimum delay between requests based on rate_limit
+        if rate_limit:
+            self._min_request_interval = 1.0 / rate_limit  # seconds
+        elif delay_ms:
+            self._min_request_interval = delay_ms / 1000.0  # convert ms to seconds
+        else:
+            self._min_request_interval = 0
         
         # Optimized connection management
         self.session = self._create_optimized_session(max_retries, backoff_factor)
 
-        # Request cache to avoid redundant requests for the same URL
-        self.request_cache = {} if use_cache else None
-        self.max_cache_size = max_cache_size
+        # Request cache using LRU for better performance
+        self.request_cache = LRUCache(max_cache_size) if use_cache else None
         self.cache_hits = 0
         self.cache_misses = 0
         
@@ -133,22 +220,38 @@ class HttpClient:
         if self.rotate_user_agent and USER_AGENTS:
             self.session.headers["User-Agent"] = random.choice(USER_AGENTS)
     
+    def _apply_rate_limit(self):
+        """Apply rate limiting delay if configured."""
+        if self._min_request_interval > 0:
+            with self._rate_limit_lock:
+                current_time = time.time()
+                time_since_last_request = current_time - self._last_request_time
+
+                if time_since_last_request < self._min_request_interval:
+                    sleep_time = self._min_request_interval - time_since_last_request
+                    time.sleep(sleep_time)
+
+                self._last_request_time = time.time()
+
     def get(self, url: str) -> Dict[str, Any]:
         """
-        Make a GET request to the specified URL with optimized handling.
-        
+        Make a GET request to the specified URL with optimized handling and rate limiting.
+
         Args:
             url: URL to request
-            
+
         Returns:
             Dictionary containing:
             - 'success': Boolean indicating if request was successful
             - 'response': Response object if successful
-            - 'error': Error string if not successful 
+            - 'error': Error string if not successful
             - 'time': Time taken in seconds
             - 'large_file': Boolean indicating if file is large
             - 'partial_content': Boolean indicating if content is partial
         """
+        # Apply rate limiting before making the request
+        self._apply_rate_limit()
+
         # Always log requests in verbose mode, regardless of where called from
         # Import VERBOSE directly here to avoid circular imports
         from app_settings import VERBOSE
@@ -156,26 +259,29 @@ class HttpClient:
             logger.debug(f"HTTP Request: GET {url}")
             
         # Check cache first if enabled
-        if self.request_cache and url in self.request_cache:
-            self.cache_hits += 1
-            if VERBOSE:
-                logger.debug(f"Cache hit for {url}")
-            cached = self.request_cache[url]
-            # Create a mock response object for compatibility
-            if cached["success"]:
-                mock_response = type('MockResponse', (), {
-                    'status_code': cached["status_code"],
-                    'headers': cached["headers"],
-                    'content': b'',  # Empty content for cached responses
-                })()
-                return {
-                    "success": True,
-                    "response": mock_response,
-                    "time": cached["time"],
-                    "error": cached["error"]
-                }
+        if self.request_cache:
+            cached = self.request_cache.get(url)
+            if cached:
+                self.cache_hits += 1
+                if VERBOSE:
+                    logger.debug(f"Cache hit for {url}")
+                # Create a mock response object for compatibility
+                if cached["success"]:
+                    mock_response = type('MockResponse', (), {
+                        'status_code': cached["status_code"],
+                        'headers': cached["headers"],
+                        'content': b'',  # Empty content for cached responses
+                    })()
+                    return {
+                        "success": True,
+                        "response": mock_response,
+                        "time": cached["time"],
+                        "error": cached["error"]
+                    }
+                else:
+                    return cached
             else:
-                return cached
+                self.cache_misses += 1
         else:
             self.cache_misses += 1
         
@@ -326,16 +432,8 @@ class HttpClient:
         
         # Cache the result if successful and caching is enabled
         if self.request_cache and result["success"]:
-            # Manage cache size - remove oldest entry if cache is full
-            if len(self.request_cache) >= self.max_cache_size:
-                # Remove oldest entry (FIFO to keep memory usage controlled)
-                try:
-                    oldest_key = next(iter(self.request_cache))
-                    del self.request_cache[oldest_key]
-                except (StopIteration, KeyError):
-                    pass
-
             # Add current result to cache (lightweight version to save memory)
+            # LRUCache automatically manages size and evicts least recently used
             cached_result = {
                 "success": result["success"],
                 "response": None,  # Don't cache the full response object
@@ -344,7 +442,7 @@ class HttpClient:
                 "status_code": getattr(result.get("response"), "status_code", 0),
                 "headers": dict(getattr(result.get("response"), "headers", {}))
             }
-            self.request_cache[url] = cached_result
+            self.request_cache.put(url, cached_result)
             
         return result
     
@@ -381,19 +479,20 @@ class HttpClient:
     
     def clear_cache(self):
         """Clear the request cache."""
-        self.request_cache.clear()
+        if self.request_cache:
+            self.request_cache.clear()
         self.cache_hits = 0
         self.cache_misses = 0
-    
+
     def get_cache_stats(self) -> Dict[str, Any]:
         """Get cache statistics."""
         total_requests = self.cache_hits + self.cache_misses
         hit_rate = self.cache_hits / total_requests if total_requests > 0 else 0
-        
+
         return {
-            "enabled": self.use_cache,
-            "size": len(self.request_cache),
-            "max_size": self.max_cache_size,
+            "enabled": bool(self.request_cache),
+            "size": len(self.request_cache) if self.request_cache else 0,
+            "max_size": self.request_cache.max_size if self.request_cache else 0,
             "hits": self.cache_hits,
             "misses": self.cache_misses,
             "hit_rate": hit_rate,
