@@ -8,11 +8,11 @@
 **LeftOvers** is an advanced, high-performance scanner for detecting residual or "forgotten" files on web servers.
 
 **Key Features:**
-- 🚀 **Adaptive Threading** - Automatically adjusts performance based on target speed
-- ⚡ **LRU Caching** - 30-40% better cache hit rates for faster scans
-- 🎯 **Rate Limiting** - Control scan speed to avoid detection
-- 🔒 **Thread-Safe** - Fully synchronized concurrent operations
-- 🧠 **Smart Detection** - Advanced false-positive filtering
+- Adaptive Threading** - Automatically adjusts performance based on target speed
+- **LRU Caching** - 30-40% better cache hit rates for faster scans
+- **Rate Limiting** - Control scan speed to avoid detection
+- **Thread-Safe** - Fully synchronized concurrent operations
+- **Smart Detection** - Advanced false-positive filtering
 
 ![LeftOvers Scanner Tool](LeftOver.png)
 
