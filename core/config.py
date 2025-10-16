@@ -28,8 +28,8 @@ DEFAULT_HEADERS = {
 # HIGH PRIORITY - Most likely to contain sensitive leftovers
 CRITICAL_BACKUP_EXTENSIONS = [
     "bak", "backup", "old", "orig", "save", "copy", "tmp", "temp", "~",
-    "sql", "dump", "db", "sqlite", "sqlite3", "mdb", "accdb",
-    "zip", "rar", "tar", "tar.gz", "7z", "tgz", "gz", "bz2",
+    "sql", "dump", "db", "sqlite", "sqlite3", "mdb", "accdb", "asp", "aspx",
+    "zip", "rar", "tar", "tar.gz", "7z", "tgz", "gz", "bz2", "php", "jsp", "py",
     "env", "config", "cfg", "conf", "ini", "json", "xml", "yaml", "yml",
 ]
 
@@ -113,6 +113,12 @@ BUILD_CONFIG_EXTENSIONS = [
     "requirements.txt.bak", "pom.xml.bak", "build.gradle.bak", "Makefile.bak",
 ]
 
+EXTRAS_EXTENSIONS = [
+    "wml", "bkl", "wmls", "udl", "bat", "dll", "reg", "cmd", "vbs",
+    "hta", "wsf", "cpl", "msc", "lnk", "url", "inf", "ins", "isp",
+    "teste.asp", "test.asp", "teste.aspx", "test.aspx", "teste.php", "test.php"
+]
+
 # Create the final DEFAULT_EXTENSIONS list from all categories
 DEFAULT_EXTENSIONS = [
     *CRITICAL_BACKUP_EXTENSIONS,
@@ -123,6 +129,7 @@ DEFAULT_EXTENSIONS = [
     *VCS_LEFTOVER_EXTENSIONS,
     *DOCUMENT_BACKUP_EXTENSIONS,
     *BUILD_CONFIG_EXTENSIONS,
+    *EXTRAS_EXTENSIONS
 ]
 
 DEFAULT_FILES_WORDS = [
@@ -145,7 +152,8 @@ WEB_RELATED_WORDS = [
     "backend", "conteudo", "deploy", "frontend", "hosting", "hospedagem",
     "htdocs", "html", "httpdocs", "inetpub", "page", "pagina", "portal",
     "public", "public_html", "publication", "publicacao", "site", "sistema",
-    "static", "system", "web", "webpage", "webroot", "website", "www", "www-data"
+    "static", "system", "web", "webpage", "webroot", "website", "www", "www-data",
+    "arq", "arquivo", "arquivos"
 ]
 
 VERSION_CONTROL_WORDS = [
@@ -192,7 +200,7 @@ EN_COMMON_WORDS = [
     "resolution", "restricted", "result", "reviewed", "sale", "sales", "scanner",
     "secret", "secretary", "sent", "server", "service", "settings", "setup",
     "society", "statement", "strategy", "strategic", "supplier", "support", "tax",
-    "test", "token", "transaction", "unit", "upload", "uploads", "user", "vpn"
+    "test", "token", "transaction", "unit", "upload", "uploads", "user", "vpn", "wap",
 ]
 
 PTBR_BUSINESS_WORDS = [
@@ -200,15 +208,21 @@ PTBR_BUSINESS_WORDS = [
     "cliente", "cobranca", "comercial", "compra", "contabil", "contabilidade",
     "credito", "debito", "despesa", "diretoria", "estoque", "extrato", "fatura",
     "financeiro", "fiscal", "fluxo", "formulario", "fornecedor", "gerencia",
-    "investimento", "lucro", "nfe", "nfse", "orcamento", "pagar", "pagamento",
-    "pesquisa", "prejuizo", "produto", "receber", "receita", "registro",
-    "relatorio", "relatorios", "resultado", "transacao", "venda", "vendas"
+    "investimento", "lucro", "nfe", "nfse", "orcamento", "orcamentos", "pagar",
+    "pagamento", "pesquisa", "prejuizo", "produto", "receber", "receita", "registro",
+    "verificar", "relatorio", "relatorios", "resultado", "transacao", "venda", "vendas",
+    "valor", "valores", "campanha", "campanhas", "cartao", "cartoes", "comissao", "comissoes",
+    "corretora", "corretoras", "cotacao", "cotacoes", "financiamento", "consorcio", "imobiliario",
+    "imoveis", "imovel", "investidor", "investidores", "leilao", "leiloes", "lote", "lotes",
+    "patrimonio", "prospeccao", "prospeccoes", "seguros", "seguro", "taxa", "taxas", "prolabore",
+    "tributo", "tributos", "tributacao", "tributacoes", "tributario", "tributarios", "vencimento",
+    "vencimentos", "vendedor", "vendedores", "vitrine", "vitrines",
 ]
 
 PTBR_CORPORATE_WORDS = [
     "acao", "acoes", "associacao", "atividade", "atividades", "auditoria",
     "candidato", "cnpj", "comite", "compliance", "concurso", "conselho", "conta",
-    "contratacao", "contrato", "corporativo", "cpf", "departamento", "diretrizes",
+    "contratacao", "contrato", "contratos", "corporativo", "cpf", "departamento", "diretrizes",
     "edital", "eleicao", "eleitoral", "empresa", "entidade", "estrategia",
     "estrategico", "filial", "fundacao", "gestao", "governo", "grupo", "guia",
     "guias", "imposto", "institucional", "inscricao", "licitacao", "manual",
@@ -222,7 +236,8 @@ PTBR_TECHNICAL_WORDS = [
     "anexo", "autenticacao", "caixa", "certificado", "correio", "criptografia",
     "digitalizar", "download", "email", "entrada", "enviado", "extranet", "fila",
     "firewall", "impressao", "impressora", "intranet", "mensagem", "proxy", "rede",
-    "saida", "scanner", "token", "upload", "uploads", "vpn"
+    "saida", "scanner", "token", "upload", "uploads", "vpn",  "variaveis",
+    "variavel",
 ]
 
 DATABASE_CONFIG_WORDS = [
