@@ -3,7 +3,7 @@ Scanner-specific configurations and constants for the LeftOvers scanner.
 """
 
 # Import global settings
-from app_settings import (
+from leftovers.app_settings import (
     DEFAULT_TIMEOUT,
     DEFAULT_THREADS,
     MAX_FILE_SIZE_MB,

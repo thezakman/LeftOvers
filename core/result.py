@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Dict, Any, Optional, List
 
-from app_settings import IGNORE_CONTENT
+from leftovers.app_settings import IGNORE_CONTENT
 
 @dataclass
 class ScanResult:

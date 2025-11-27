@@ -11,23 +11,23 @@ import re
 import tldextract
 import threading
 
-from app_settings import VERSION
-from core.config import (
+from leftovers.app_settings import VERSION
+from leftovers.core.config import (
     DEFAULT_TIMEOUT, DEFAULT_THREADS, DEFAULT_EXTENSIONS,
     DEFAULT_BACKUP_WORDS, DEFAULT_HEADERS, USER_AGENTS
 )
-from core.result import ScanResult
-from core.detection import check_false_positive
-from utils.logger import logger, setup_logger
-from utils.console import (
+from leftovers.core.result import ScanResult
+from leftovers.core.detection import check_false_positive
+from leftovers.utils.logger import logger, setup_logger
+from leftovers.utils.console import (
     console, print_banner, print_info_panel, 
     create_progress_bar, format_and_print_result, create_url_list_progress
 )
-from utils.file_utils import load_url_list
-from utils.http_utils import HttpClient
-from utils.url_utils import generate_test_urls
-from utils.extension_optimizer import ExtensionOptimizer
-from utils.domain_generator import DomainWordlistGenerator
+from leftovers.utils.file_utils import load_url_list
+from leftovers.utils.http_utils import HttpClient
+from leftovers.utils.url_utils import generate_test_urls
+from leftovers.utils.extension_optimizer import ExtensionOptimizer
+from leftovers.utils.domain_generator import DomainWordlistGenerator
 
 # Compile regular expressions once for reuse
 SEGMENT_PATTERN = re.compile(r'Segment\s+(\d+)')
@@ -386,7 +386,7 @@ class LeftOver:
                 return None  # URL already reported, ignore this result
             
             # Flag file as large if needed
-            from app_settings import MAX_FILE_SIZE_MB, SUCCESS_STATUSES
+            from leftovers.app_settings import MAX_FILE_SIZE_MB, SUCCESS_STATUSES
             if content_length > MAX_FILE_SIZE_MB * 1024 * 1024:
                 scan_result.large_file = True
                 
@@ -661,7 +661,7 @@ class LeftOver:
         
         # Debug: check URL segments before processing
         if self.verbose:
-            from utils.debug_utils import debug_url_segments
+            from leftovers.utils.debug_utils import debug_url_segments
             debug_url_segments(target_url)
 
         # Perform important extension tests (PDF, Office docs, archives)
@@ -1117,7 +1117,7 @@ class LeftOver:
         
         # Debug: check URL segments
         if self.verbose:
-            from utils.debug_utils import debug_url_segments
+            from leftovers.utils.debug_utils import debug_url_segments
             debug_url_segments(target_url)
 
         # Perform important extension tests (PDF, Office docs, archives)
@@ -1203,7 +1203,7 @@ class LeftOver:
     def _export_url_results(self, url: str):
         """Export specific results for a URL."""
         from urllib.parse import urlparse
-        from utils.file_utils import export_results
+        from leftovers.utils.file_utils import export_results
         
         # Create filename based on the URL efficiently
         parsed = urlparse(url)
@@ -1241,7 +1241,7 @@ class LeftOver:
     
     def print_summary(self):
         """Print a summary of the found results - optimized version."""
-        from utils.report import generate_summary_report
+        from leftovers.utils.report import generate_summary_report
         
         if not self.results or self.silent:
             return

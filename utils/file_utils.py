@@ -7,9 +7,9 @@ import json
 from datetime import datetime
 from typing import List, Dict, Any
 
-from utils.logger import logger
-from core.config import DEFAULT_EXTENSIONS
-from app_settings import VERSION
+from leftovers.utils.logger import logger
+from leftovers.core.config import DEFAULT_EXTENSIONS
+from leftovers.app_settings import VERSION
 
 def load_wordlist(file_path: str) -> List[str]:
     """
@@ -101,7 +101,7 @@ def export_results(results: List[Any], output_file: str) -> bool:
         Boolean indicating if export was successful
     """
     import json
-    from utils.logger import logger
+    from leftovers.utils.logger import logger
             
     try:
         with open(output_file, 'w', encoding='utf-8') as f:

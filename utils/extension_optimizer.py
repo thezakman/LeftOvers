@@ -6,7 +6,7 @@ from typing import List, Dict, Set
 from urllib.parse import urlparse
 import tldextract
 
-from core.config import (
+from leftovers.core.config import (
     ARCHIVE_EXTENSIONS, BACKUP_SUFFIXES, DATABASE_EXTENSIONS,
     CONFIG_LOG_EXTENSIONS, DOCUMENT_BACKUP_EXTENSIONS, CODE_BACKUP_EXTENSIONS
 )

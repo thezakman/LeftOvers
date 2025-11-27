@@ -9,42 +9,33 @@ import difflib
 from typing import Dict, Tuple, Any, Set
 import sys
 
-# Add workaround for pkg_resources issues
+# Use importlib.metadata instead of deprecated pkg_resources
 try:
-    import pkg_resources
-except (ImportError, PermissionError, Exception) as e:
-    # Create a more complete mock of pkg_resources to prevent errors in tldextract
-    class MockPkgResources:
-        class DistributionNotFound(Exception):
-            pass
-            
-        class Distribution:
-            def __init__(self, version):
-                self.version = version
-                
-        def get_distribution(self, name):
-            """Mock implementation of get_distribution to fix tldextract import"""
+    from importlib.metadata import version, PackageNotFoundError
+except ImportError:
+    # Fallback for Python < 3.8
+    try:
+        from importlib_metadata import version, PackageNotFoundError
+    except ImportError:
+        # Create a mock if importlib.metadata is not available
+        def version(package_name):
+            """Mock version function"""
             versions = {
-                'tldextract': '3.4.0',  # Assume a reasonable version
+                'tldextract': '3.4.0',
                 'requests': '2.31.0',
                 'urllib3': '2.0.4'
             }
-            if name in versions:
-                dist = self.Distribution(versions[name])
-                return dist
-            raise self.DistributionNotFound(f"Distribution '{name}' not found")
-    
-    # Replace pkg_resources with our enhanced mock
-    pkg_resources_mock = MockPkgResources()
-    sys.modules['pkg_resources'] = pkg_resources_mock
-    print(f"Warning: pkg_resources import failed. Using enhanced fallback implementation.")
+            return versions.get(package_name, '0.0.0')
+        
+        class PackageNotFoundError(Exception):
+            pass
 
-from core.result import ScanResult
-from utils.logger import logger
+from leftovers.core.result import ScanResult
+from leftovers.utils.logger import logger
 
 # Safe import of http_utils - try/except pattern to handle import errors
 try:
-    from utils.http_utils import calculate_content_hash, HttpClient
+    from leftovers.utils.http_utils import calculate_content_hash, HttpClient
 except ImportError as e:
     # Define fallback functions if imports fail
     def calculate_content_hash(content):
@@ -208,7 +199,7 @@ def check_false_positive(
     Returns:
         Tuple of (is_false_positive: bool, reason: str)
     """
-    from app_settings import SUCCESS_STATUSES
+    from leftovers.app_settings import SUCCESS_STATUSES
     
     # Calculate content hash for comparison - only once
     content_hash = calculate_content_hash(response_content)
@@ -559,7 +550,7 @@ def _is_likely_leftover_file(result: ScanResult, response_content: bytes) -> boo
     Returns:
         Boolean indicating if the file is likely a legitimate leftover
     """
-    from app_settings import SUCCESS_STATUSES
+    from leftovers.app_settings import SUCCESS_STATUSES
 
     # Only apply special leftover detection for success status codes
     if result.status_code not in SUCCESS_STATUSES:

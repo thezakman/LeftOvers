@@ -10,8 +10,8 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from urllib3.exceptions import InsecureRequestWarning
 
-from app_settings import DEFAULT_TIMEOUT, USER_AGENTS, MAX_FILE_SIZE_MB
-from utils.logger import logger
+from leftovers.app_settings import DEFAULT_TIMEOUT, USER_AGENTS, MAX_FILE_SIZE_MB
+from leftovers.utils.logger import logger
 
 class MemoryEfficientHttpHandler:
     """

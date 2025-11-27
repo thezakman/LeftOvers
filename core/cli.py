@@ -8,16 +8,16 @@ import argparse
 import traceback
 import signal
 
-from app_settings import VERSION
-from core.config import (
+from leftovers.app_settings import VERSION
+from leftovers.core.config import (
     DEFAULT_TIMEOUT, DEFAULT_THREADS, DEFAULT_EXTENSIONS,
     DEFAULT_BACKUP_WORDS, DEFAULT_HEADERS
 )
-from core.scanner import LeftOver
-from core.detection import parse_status_codes
-from utils.logger import logger
-from utils.console import console, print_banner, print_info_panel
-from utils.file_utils import load_wordlist, load_url_list, export_results
+from leftovers.core.scanner import LeftOver
+from leftovers.core.detection import parse_status_codes
+from leftovers.utils.logger import logger
+from leftovers.utils.console import console, print_banner, print_info_panel
+from leftovers.utils.file_utils import load_wordlist, load_url_list, export_results
 
 class ArgumentParserWithBanner(argparse.ArgumentParser):
     """Custom ArgumentParser that shows the banner before help"""
@@ -192,7 +192,7 @@ def configure_scanner_from_args(args):
             scanner.backup_words = backup_words
             # Fast scan also reduces extensions to most effective ones for speed
             if not extensions:  # Only if no custom extensions specified
-                from core.config import CRITICAL_BACKUP_EXTENSIONS, SECURITY_EXTENSIONS
+                from leftovers.core.config import CRITICAL_BACKUP_EXTENSIONS, SECURITY_EXTENSIONS
                 scanner.extensions = CRITICAL_BACKUP_EXTENSIONS[:20] + SECURITY_EXTENSIONS[:10]
         else:
             # Regular brute force configuration
@@ -221,7 +221,7 @@ def handle_interrupt(signum, frame):
     silent = '-s' in sys.argv or '--silent' in sys.argv
     
     if not silent:
-        from utils.console import console
+        from leftovers.utils.console import console
         console.print("\n[bold red]Interrupted by user. Cleaning up...[/bold red]")
     sys.exit(0)
 

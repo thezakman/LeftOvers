@@ -9,7 +9,7 @@ import urllib.parse
 import tldextract
 from typing import List, Dict, Any, Optional, Tuple
 from urllib.parse import urlparse, urljoin
-from utils.logger import logger
+from leftovers.utils.logger import logger
 
 def analyze_url(url: str) -> Dict[str, Any]:
     """

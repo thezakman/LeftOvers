@@ -7,9 +7,9 @@ from rich.table import Table
 from rich.console import Console
 from rich import box
 
-from core.result import ScanResult
-from utils.logger import logger
-from utils.file_utils import format_size
+from leftovers.core.result import ScanResult
+from leftovers.utils.logger import logger
+from leftovers.utils.file_utils import format_size
 
 def group_results_by_status(results: List[ScanResult]) -> Dict[int, Dict[str, int]]:
     """Group results by status code and count false positives."""
@@ -299,7 +299,7 @@ def _get_status_style(status_code: int) -> str:
     Returns:
         String with Rich color style name
     """
-    from app_settings import SUCCESS_STATUSES
+    from leftovers.app_settings import SUCCESS_STATUSES
     
     if status_code in SUCCESS_STATUSES:  # 200 OK, 206 Partial Content
         return "bold green"  # Use bold for emphasis on successful responses

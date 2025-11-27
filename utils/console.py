@@ -29,7 +29,7 @@ from rich.progress import (
 )
 from rich import box
  
-from utils.file_utils import format_size
+from leftovers.utils.file_utils import format_size
 
 def get_terminal_width():
     """Get the terminal width, with fallback if detection fails."""
@@ -63,7 +63,7 @@ def print_banner(use_color=True, silent=False):
     """
 
     if use_color:
-        console.print(banner_text, style="bold bright_white")
+        console.print(banner_text, style="bold bright_white", markup=False, highlight=False)
         console.print("       [bold bright_green][Advanced Web Scanner for Leftover Files Discovery][/bold bright_green]")
         console.print()
     else:
@@ -244,7 +244,7 @@ def format_and_print_result(console, result, use_color=True, verbose=False, sile
         return
 
     # Import SUCCESS_STATUSES only when needed to avoid circular imports
-    from app_settings import SUCCESS_STATUSES
+    from leftovers.app_settings import SUCCESS_STATUSES
 
     # Get current terminal width for intelligent formatting
     terminal_width = console.width

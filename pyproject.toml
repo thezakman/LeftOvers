@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "LeftOvers"
-version = "1.2.6"
+version = "1.2.7"
 description = "An advanced scanner to find residual files on web servers"
 readme = "README.md"
 authors = [
@@ -36,12 +36,16 @@ classifiers = [
 keywords = ["security", "scanner", "web", "pentest", "residual files", "backups"]
 
 [project.scripts]
-leftovers = "core.cli:main"
+leftovers = "leftovers.core.cli:main"
 
 [project.urls]
 "Homepage" = "https://github.com/thezakman/LeftOvers"
 "Bug Tracker" = "https://github.com/thezakman/LeftOvers/issues"
 
 [tool.setuptools]
-packages = ["core", "utils"]
-py-modules = ["LeftOvers", "app_settings", "__main__"]
+packages = ["leftovers", "leftovers.core", "leftovers.utils"]
+
+[tool.setuptools.package-dir]
+"leftovers" = "."
+"leftovers.core" = "core"
+"leftovers.utils" = "utils"

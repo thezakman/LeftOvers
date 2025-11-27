@@ -2,15 +2,19 @@
 # -*- coding: utf-8 -*-
 
 from setuptools import setup, find_packages
-from app_settings import VERSION
 
 setup(
     name="LeftOvers",
-    version=VERSION,  
+    version="1.2.7",  
     description="An advanced scanner to find residual files on web servers",
     author="TheZakMan",
-    packages=find_packages(".") + [""],
-    py_modules=["LeftOvers", "app_settings", "__main__"],
+    packages=["leftovers", "leftovers.core", "leftovers.utils"],
+    package_dir={
+        "leftovers": ".",
+        "leftovers.core": "core",
+        "leftovers.utils": "utils",
+    },
+    py_modules=["leftovers.LeftOvers", "leftovers.app_settings"],
     include_package_data=True,
     install_requires=[
         "requests>=2.31.0",
@@ -24,7 +28,7 @@ setup(
     ],
     entry_points={
         "console_scripts": [
-            "leftovers=core.cli:main",
+            "leftovers=leftovers.core.cli:main",
         ],
     },
     python_requires=">=3.8",

@@ -10,10 +10,10 @@ from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
 import tldextract
 
-from utils.logger import logger
-from utils.http_utils import parse_url
-from utils.domain_generator import DomainWordlistGenerator
-from core.detection import establish_baseline, perform_sanity_check
+from leftovers.utils.logger import logger
+from leftovers.utils.http_utils import parse_url
+from leftovers.utils.domain_generator import DomainWordlistGenerator
+from leftovers.core.detection import establish_baseline, perform_sanity_check
 # Compile IP pattern only once for reuse
 IP_PATTERN = re.compile(r'^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$')
 
@@ -544,7 +544,7 @@ def _log_path_segments(path):
 
 def _debug_generated_tests(target_url, tests, verbose):
     """Run debug routines on the generated test URLs."""
-    from utils.debug_utils import debug_url_segments
+    from leftovers.utils.debug_utils import debug_url_segments
     debug_url_segments(target_url)
     
     # Check segment-specific test URLs

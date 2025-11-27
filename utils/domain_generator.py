@@ -7,7 +7,7 @@ import tldextract
 from typing import List, Set
 from urllib.parse import urlparse
 
-from core.config import ARCHIVE_EXTENSIONS, BACKUP_SUFFIXES, DATABASE_EXTENSIONS
+from leftovers.core.config import ARCHIVE_EXTENSIONS, BACKUP_SUFFIXES, DATABASE_EXTENSIONS
 
 
 class DomainWordlistGenerator:

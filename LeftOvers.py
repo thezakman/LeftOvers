@@ -11,7 +11,7 @@ import os
 # Ensure the package root directory is in PYTHONPATH
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from core.cli import main
+from leftovers.core.cli import main
 
 if __name__ == "__main__":
     main()

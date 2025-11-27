@@ -7,8 +7,8 @@ import re
 import urllib.parse
 from typing import List, Dict, Any, Optional
 
-from utils.http_utils import parse_url
-from utils.logger import logger
+from leftovers.utils.http_utils import parse_url
+from leftovers.utils.logger import logger
 
 def debug_url_segments(url: str) -> None:
     """

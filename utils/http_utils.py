@@ -18,8 +18,8 @@ import urllib3
 from requests.exceptions import RequestException, Timeout, ConnectionError
 from urllib3.exceptions import InsecureRequestWarning
 
-from utils.logger import logger
-from app_settings import USER_AGENTS, CHUNK_SIZE, MAX_FILE_SIZE_MB, VERIFY_SSL
+from leftovers.utils.logger import logger
+from leftovers.app_settings import USER_AGENTS, CHUNK_SIZE, MAX_FILE_SIZE_MB, VERIFY_SSL
 
 # Suppress only the InsecureRequestWarning
 urllib3.disable_warnings(InsecureRequestWarning)
@@ -254,7 +254,7 @@ class HttpClient:
 
         # Always log requests in verbose mode, regardless of where called from
         # Import VERBOSE directly here to avoid circular imports
-        from app_settings import VERBOSE
+        from leftovers.app_settings import VERBOSE
         if VERBOSE:
             logger.debug(f"HTTP Request: GET {url}")
             
