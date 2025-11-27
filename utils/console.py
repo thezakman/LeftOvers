@@ -48,6 +48,28 @@ def get_terminal_width():
 # Note: Rich Console will auto-detect terminal width if no width is specified
 console = Console(force_terminal=True)
 
+def print_section_separator(text: str = "", use_color: bool = True, char: str = "─"):
+    """Print a clean section separator with optional centered text."""
+    terminal_width = get_terminal_width()
+    
+    if not text:
+        # Just print a line
+        separator = char * terminal_width
+    else:
+        # Calculate padding for centered text
+        text_with_spaces = f" {text} "
+        text_len = len(text_with_spaces)
+        remaining = max(terminal_width - text_len, 0)
+        left_pad = remaining // 2
+        right_pad = remaining - left_pad
+        
+        separator = f"{char * left_pad}{text_with_spaces}{char * right_pad}"
+    
+    if use_color:
+        console.print(f"[dim cyan]{separator}[/dim cyan]")
+    else:
+        print(separator)
+
 def print_banner(use_color=True, silent=False):
     """Print the ASCII banner for the application."""
     if silent:
@@ -99,6 +121,7 @@ def create_progress_bar(total, use_color=True):
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
         BarColumn(),
+        TextColumn("[progress.percentage]{task.completed}/{task.total}"),
         TaskProgressColumn(),
         console=console if use_color else None
     )
@@ -247,7 +270,7 @@ def format_and_print_result(console, result, use_color=True, verbose=False, sile
     from leftovers.app_settings import SUCCESS_STATUSES
 
     # Get current terminal width for intelligent formatting
-    terminal_width = console.width
+    terminal_width = get_terminal_width()
     
     # Get file size in MB (if available)
     file_size_mb = None
@@ -287,11 +310,17 @@ def format_and_print_result(console, result, use_color=True, verbose=False, sile
         
         # Add false positive indicator if applicable
         if hasattr(result, 'false_positive') and result.false_positive:
+            # Truncate FP reason if too long
+            fp_reason = result.false_positive_reason
+            max_fp_len = 80
+            if len(fp_reason) > max_fp_len:
+                fp_reason = fp_reason[:max_fp_len-3] + "..."
+            
             # Use different styling based on status - success codes are important even when marked as FP
             if result.status_code in SUCCESS_STATUSES:
-                details += f" [yellow][Possible FP: {result.false_positive_reason}][/yellow]"
+                details += f" [yellow][Possible FP: {fp_reason}][/yellow]"
             else:
-                details += f" [dim red][FP: {result.false_positive_reason}][/dim red]"
+                details += f" [dim red][FP: {fp_reason}][/dim red]"
             
         # Add large file warning
         if large_file:

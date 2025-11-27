@@ -2,6 +2,17 @@
 Scanner-specific configurations and constants for the LeftOvers scanner.
 """
 
+"""
+This module contains all scanner-specific configurations including:
+- File extensions to scan (organized by priority and category)
+- Backup words and directory names
+- HTTP headers configuration
+- Content filtering rules
+
+The configuration is organized hierarchically for better maintainability
+and to allow selective scanning based on threat level.
+"""
+
 # Import global settings
 from leftovers.app_settings import (
     DEFAULT_TIMEOUT,
@@ -104,6 +115,7 @@ SECURITY_EXTENSIONS = [
     "htpasswd", "passwd", "shadow", "pwd", "secret", "credentials",
     "token", "auth", "oauth", "session", "cookie", "api_key",
     "private", "public", "rsa", "dsa", "ssh", "gpg", "pgp",
+    "ca_bundle.crt", "certificate.pfx", "private.key",
 ]
 
 # ENVIRONMENT AND BUILD FILES - Configuration and build artifacts
@@ -116,7 +128,43 @@ BUILD_CONFIG_EXTENSIONS = [
 EXTRAS_EXTENSIONS = [
     "wml", "bkl", "wmls", "udl", "bat", "dll", "reg", "cmd", "vbs",
     "hta", "wsf", "cpl", "msc", "lnk", "url", "inf", "ins", "isp",
-    "teste.asp", "test.asp", "teste.aspx", "test.aspx", "teste.php", "test.php"
+    "teste.asp", "test.asp", "teste.aspx", "test.aspx", "teste.php", "test.php",
+    "ash", "ashx", "master.cs", "publishproj", "cvs", "xls", "xlsx"
+]
+
+# SPECIFIC FILES - Complete filenames that should be tested directly
+# Organized by priority - CRITICAL files first
+CRITICAL_SPECIFIC_FILES = [
+    # Certificates and keys (HIGHEST PRIORITY)
+    "certificate.pfx", "private.key", "ca_bundle.crt",
+    # Environment files
+    ".env", ".environment", ".envrc", ".envs", ".env~",
+    # Access tokens
+    "accesstoken", "accesstokens.json",
+    # Web configuration
+    ".htaccess", "web.config", "web.debug.config",
+]
+
+SPECIFIC_FILES = [
+    # Server configuration
+    "webserver-plugin.xml", "webserver.ini",
+    # API documentation
+    "swagger-ui", "redoc",
+    # Build and deployment
+    ".dockerignore", ".npmrc",
+    # Environment config
+    "env-config.js", "env.js",
+    # Other files
+    ".DS_Store", ".well-known", "robots.txt",
+    "lixo_eletronico.sql", "site-api", "site.js",
+    "log_all", "log_crm", "log-event", "log.mdb",
+    "latest-logs.zip", "wp.php",
+]
+
+# VCS AND GIT FILES - Version control specific files
+VCS_SPECIFIC_FILES = [
+    ".git/config", ".svn/entries", ".git", ".gitignore", ".gitattributes",
+    ".gitmodules", ".hgignore", ".hgsub", ".hgsubstate", "web.config",
 ]
 
 # Create the final DEFAULT_EXTENSIONS list from all categories
@@ -134,7 +182,8 @@ DEFAULT_EXTENSIONS = [
 
 DEFAULT_FILES_WORDS = [
     "README", "assets", "composer", "content", "contents", "debug", "logging",
-    "package", "readme", "service", "service1", "swagger", "test", "trace", "ws"
+    "package", "readme", "service", "service1", "swagger", "test", "trace", "ws",
+    "settings", "index", "front", "update", "modelo", "modelos", "localhost"
 ]
 
 BACKUP_DIRECTORY_WORDS = [
@@ -153,7 +202,8 @@ WEB_RELATED_WORDS = [
     "htdocs", "html", "httpdocs", "inetpub", "page", "pagina", "portal",
     "public", "public_html", "publication", "publicacao", "site", "sistema",
     "static", "system", "web", "webpage", "webroot", "website", "www", "www-data",
-    "arq", "arquivo", "arquivos"
+    "arq", "arquivo", "arquivos", "webserver", "webservice", "wordpress", 
+    "wp_engine", "wp_content", "wp_includes", "wp", "wp_backup"
 ]
 
 VERSION_CONTROL_WORDS = [
@@ -161,12 +211,14 @@ VERSION_CONTROL_WORDS = [
 ]
 
 DATE_VERSION_WORDS = [
-    "1.0", "2.0", "2020", "2021", "2022", "2023", "2024", "2025", "abr", "abril",
-    "ago", "agosto", "apr", "april", "aug", "august", "dec", "december", "dez",
-    "dezembro", "feb", "february", "fev", "fevereiro", "jan", "janeiro", "jul",
-    "july", "jun", "junho", "june", "mai", "maio", "mar", "march", "marco", "may",
-    "nov", "november", "novembro", "oct", "october", "out", "outubro", "sep",
-    "september", "set", "setembro", "v1", "v2", "v3"
+    "1", "2", "1.0", "2.0", "200", "2001", "2006", "2007", "2008", "2009", 
+    "2013", "2014", "2019", "2020", "2021", "2022", "2023", "2024", "2025", "2026",
+    "abr", "abril", "ago", "agosto", "apr", "april", "aug", "august", 
+    "dec", "december", "dez", "dezembro", "feb", "february", "fev", "fevereiro", 
+    "jan", "janeiro", "jul", "july", "jun", "junho", "june", "mai", "maio", 
+    "mar", "march", "marco", "may", "nov", "november", "novembro", 
+    "oct", "october", "out", "outubro", "sep", "september", "set", "setembro", 
+    "v1", "v2", "v3"
 ]
 
 PTBR_COMMON_WORDS = [
@@ -242,8 +294,8 @@ PTBR_TECHNICAL_WORDS = [
 
 DATABASE_CONFIG_WORDS = [
     "conf", "config", "data", "database", "db", "dist", "dump", "exportacao",
-    "hidden", "importacao", "install", "internal", "modelo", "padrao", "private",
-    "settings", "setup"
+    "hidden", "importacao", "install", "internal", "padrao", "private",
+    "settings", "setup", "modelos", "modelo", "sql", "structure", "tmp", "temp", 
 ]
 
 # Create the final DEFAULT_BACKUP_WORDS list from all categories
@@ -260,3 +312,121 @@ DEFAULT_BACKUP_WORDS = [
     *PTBR_TECHNICAL_WORDS,
     *DATABASE_CONFIG_WORDS,
 ]
+
+# ─── Helper Functions ───────────────────────────────────────
+
+def get_extensions_by_priority(priority: str = "all") -> list:
+    """
+    Get extensions filtered by priority level.
+    
+    Args:
+        priority: Priority level - "critical", "high", "medium", "all"
+    
+    Returns:
+        List of extensions for the specified priority
+    """
+    if priority == "critical":
+        return CRITICAL_BACKUP_EXTENSIONS
+    elif priority == "high":
+        return [*CRITICAL_BACKUP_EXTENSIONS, *SECURITY_EXTENSIONS, *CODE_BACKUP_EXTENSIONS]
+    elif priority == "medium":
+        return [*CRITICAL_BACKUP_EXTENSIONS, *SECURITY_EXTENSIONS, 
+                *CODE_BACKUP_EXTENSIONS, *CONFIG_LOG_EXTENSIONS]
+    else:  # all
+        return DEFAULT_EXTENSIONS
+
+def get_extensions_by_category(category: str) -> list:
+    """
+    Get extensions by specific category.
+    
+    Args:
+        category: Category name - "backup", "database", "config", "security", 
+                  "archive", "code", "ide", "vcs", "document", "build"
+    
+    Returns:
+        List of extensions for the specified category
+    """
+    categories = {
+        "backup": CRITICAL_BACKUP_EXTENSIONS,
+        "database": DATABASE_EXTENSIONS,
+        "config": CONFIG_EXTENSIONS,
+        "security": SECURITY_EXTENSIONS,
+        "archive": ARCHIVE_EXTENSIONS,
+        "code": CODE_BACKUP_EXTENSIONS,
+        "ide": IDE_LEFTOVER_EXTENSIONS,
+        "vcs": VCS_LEFTOVER_EXTENSIONS,
+        "document": DOCUMENT_BACKUP_EXTENSIONS,
+        "build": BUILD_CONFIG_EXTENSIONS,
+    }
+    return categories.get(category, [])
+
+def get_optimized_extension_set(max_extensions: int = 50) -> list:
+    """
+    Get an optimized set of most effective extensions for fast scanning.
+    
+    Args:
+        max_extensions: Maximum number of extensions to return
+    
+    Returns:
+        List of most effective extensions limited to max_extensions
+    """
+    # Prioritize most common and dangerous leftovers
+    priority_order = [
+        *CRITICAL_BACKUP_EXTENSIONS[:15],  # Top backup extensions
+        *SECURITY_EXTENSIONS[:10],          # Top security files
+        *DATABASE_EXTENSIONS[:8],           # Top database files
+        *CODE_BACKUP_EXTENSIONS[:10],       # Top code backups
+        *CONFIG_EXTENSIONS[:7],             # Top config files
+    ]
+    return priority_order[:max_extensions]
+
+def get_words_by_language(language: str = "all") -> list:
+    """
+    Get backup words filtered by language.
+    
+    Args:
+        language: Language filter - "en", "pt-br", "all"
+    
+    Returns:
+        List of backup words for the specified language
+    """
+    if language == "en":
+        return [*DEFAULT_FILES_WORDS, *EN_COMMON_WORDS, *BACKUP_DIRECTORY_WORDS,
+                *WEB_RELATED_WORDS, *VERSION_CONTROL_WORDS, *DATE_VERSION_WORDS]
+    elif language == "pt-br":
+        return [*DEFAULT_FILES_WORDS, *PTBR_COMMON_WORDS, *PTBR_BUSINESS_WORDS,
+                *PTBR_CORPORATE_WORDS, *PTBR_TECHNICAL_WORDS, *BACKUP_DIRECTORY_WORDS]
+    else:  # all
+        return DEFAULT_BACKUP_WORDS
+
+def get_specific_files(priority: str = "all") -> list:
+    """
+    Get list of specific complete filenames to test directly.
+    
+    These files are tested as-is without extension manipulation.
+    Critical files (certificates, keys, .env) are returned first.
+    
+    Args:
+        priority: Filter by priority - "critical", "all"
+    
+    Returns:
+        List of specific filenames to test, ordered by priority
+    """
+    if priority == "critical":
+        return CRITICAL_SPECIFIC_FILES
+    else:
+        # Return critical files first, then others
+        return [*CRITICAL_SPECIFIC_FILES, *SPECIFIC_FILES, *VCS_SPECIFIC_FILES]
+
+def get_all_test_targets() -> dict:
+    """
+    Get all test targets organized by type.
+    
+    Returns:
+        Dictionary with extensions, words, and specific files
+    """
+    return {
+        "extensions": DEFAULT_EXTENSIONS,
+        "words": DEFAULT_BACKUP_WORDS,
+        "specific_files": get_specific_files()
+    }

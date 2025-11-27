@@ -114,8 +114,16 @@ def generate_test_urls(
             added_urls.add(url)
             tests.append((url, test_type))
 
+    # Log sanity check results for better understanding of server behavior
+    if verbose and sanity_result:
+        logger.info(f"Sanity check: {sanity_data.get('message', 'Server behavior analyzed')}")
+    
     # Execute test generations in parallel when possible
     tasks = []
+    
+    # Priority 0: CRITICAL - Test specific sensitive files first (certificates, .env, etc)
+    # Pass baseline_responses so critical files can be validated against server's error behavior
+    tasks.append((_generate_critical_file_tests, (add_test, scheme, full_hostname, baseline_responses, verbose)))
     
     # Priority 1: Always run base tests first (specific to the URL structure)
     tasks.append((_generate_base_tests, (add_test, scheme, full_hostname, path_label, path_segments)))
@@ -168,6 +176,46 @@ def generate_test_urls(
         _debug_generated_tests(target_url, tests, verbose)
         
     return tests, main_page, baseline_responses
+
+def _generate_critical_file_tests(add_test, scheme, full_hostname, baseline_responses, verbose):
+    """Generate tests for critical sensitive files (certificates, .env, keys, etc).
+    These files are tested FIRST as they are high-priority security findings.
+    
+    Args:
+        add_test: Function to add URL to test list
+        scheme: URL scheme (http/https)
+        full_hostname: Full hostname with port if applicable
+        baseline_responses: Baseline responses from sanity check to understand server behavior
+        verbose: Enable verbose logging
+    """
+    from leftovers.core.config import get_specific_files
+    
+    full_url_base = f"{scheme}://{full_hostname}"
+    critical_files = get_specific_files(priority="critical")
+    
+    # Log baseline information if available
+    if verbose and baseline_responses:
+        error_behaviors = []
+        for status_code, responses in baseline_responses.items():
+            if responses and status_code >= 400:
+                resp = responses[0]
+                content_type = resp.get('content_type', 'unknown')
+                size = resp.get('size', 0)
+                error_behaviors.append(f"{status_code} returns {content_type} ({size} bytes)")
+        
+        if error_behaviors:
+            logger.info(f"Server error behavior: {', '.join(error_behaviors)}")
+            logger.info(f"This will be used to filter false positives in critical file testing")
+    
+    # Test each critical file at the root level
+    if verbose:
+        logger.info(f"Adding {len(critical_files)} critical files for testing")
+    
+    for filename in critical_files:
+        test_url = f"{full_url_base}/{filename}"
+        add_test(test_url, "critical-specific")
+        if verbose:
+            logger.debug(f"Added critical file test: {test_url}")
 
 def _generate_base_tests(add_test, scheme, full_hostname, path_label, path_segments):
     """Generate basic URL tests based on the original URL structure."""

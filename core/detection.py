@@ -103,11 +103,17 @@ def establish_baseline(http_client: HttpClient, base_url: str, verbose: bool = F
             logger.debug(f"Error establishing main page baseline: {str(e)}")
     
     # Test non-existent resources with randomized paths for better detection
+    # Include files with various extensions to catch servers that return 200 with error content
     test_paths = [
         f"/__non_existent_resource_{random.randint(10000, 99999)}__", 
         f"/system/__fake_path_{random.randint(10000, 99999)}__",
         f"/api/__invalid_endpoint_{random.randint(10000, 99999)}__",
-        f"/not_found_{random.randint(10000, 99999)}.html"
+        f"/not_found_{random.randint(10000, 99999)}.html",
+        f"/fake_file_{random.randint(10000, 99999)}.json",
+        f"/nonexistent_{random.randint(10000, 99999)}.jsp",
+        f"/missing_{random.randint(10000, 99999)}.php",
+        f"/test_{random.randint(10000, 99999)}.jsp.bak",
+        f"/fake_{random.randint(10000, 99999)}.js.bak"
     ]
     
     for path in test_paths:
@@ -134,6 +140,7 @@ def establish_baseline(http_client: HttpClient, base_url: str, verbose: bool = F
                 baseline_responses[key].append({
                     "content_hash": content_hash,
                     "content_type": response.headers.get('Content-Type', 'N/A'),
+                    "size": len(response.content) if response.content else 0,  # Use "size" for consistency
                     "content_length": len(response.content) if response.content else 0,
                     "url": url,
                     "headers": dict(response.headers),
@@ -217,6 +224,24 @@ def check_false_positive(
     if result.content_length == 0:
         return False, ""
     
+    # PRIORITY CHECK: Compare against baseline error responses FIRST
+    # This catches servers that return the same content (like error GIFs) for non-existent files
+    if result.status_code in SUCCESS_STATUSES and baseline_responses:
+        # Check against ALL baseline error responses (404, 403, etc)
+        for baseline_status, baselines in baseline_responses.items():
+            if baseline_status >= 400:  # Only check error baselines
+                for baseline in baselines:
+                    # Exact match on content hash = definitely the same error page
+                    if content_hash == baseline.get("content_hash"):
+                        return True, f"Response matches baseline {baseline_status} error (server returns {baseline.get('content_type', 'same content')} for non-existent files)"
+                    
+                    # Check for same size + content type (strong indicator for images/binary)
+                    if (result.content_length == baseline.get("size") and 
+                        result.content_type == baseline.get("content_type")):
+                        # For images, same size + type is very strong indicator
+                        if 'image/' in result.content_type.lower():
+                            return True, f"Response size and type match baseline {baseline_status} error image ({result.content_length:,} bytes)"
+    
     # Special handling for PDF files - PDF files are almost never false positives
     # when they return 200 OK or 206 Partial Content
     if (result.status_code in SUCCESS_STATUSES and 
@@ -249,15 +274,42 @@ def check_false_positive(
     if len(hash_frequency[content_hash]) >= 3:
         # Extract file extensions from URLs with this hash
         extensions = set()
+        base_filenames = set()
         for url in hash_frequency[content_hash]:
             if '.' in url:
-                ext = url.split('.')[-1].lower()
-                if len(ext) <= 5:  # Reasonable extension length
-                    extensions.add(ext)
+                # Extract base filename and extension
+                filename = url.split('/')[-1]
+                parts = filename.rsplit('.', 1)
+                if len(parts) == 2:
+                    base_filenames.add(parts[0].lower())
+                    ext = parts[-1].lower()
+                    if len(ext) <= 15:  # Reasonable extension length (including .package-lock.json)
+                        extensions.add(ext)
 
         # If we have the same content for 3+ different extensions, it's likely a generic response
+        # UNLESS it's a critical/specific file (certificate, .env, etc) - these should NEVER be marked as FP
         if len(extensions) >= 3:
-            return True, f"Same content returned for multiple file extensions: {', '.join(sorted(extensions))}"
+            # Check if any of the base filenames are critical files
+            from leftovers.core.config import CRITICAL_SPECIFIC_FILES, SPECIFIC_FILES
+            critical_files = {f.lower().split('.')[0] for f in CRITICAL_SPECIFIC_FILES}
+            specific_files = {f.lower().split('.')[0] for f in SPECIFIC_FILES}
+            
+            # If ANY filename matches critical/specific files, don't mark as FP
+            if base_filenames.intersection(critical_files) or base_filenames.intersection(specific_files):
+                # This is a critical file, don't mark as FP even if repeated
+                pass
+            else:
+                # Check if it's a generic error image (GIF, PNG, JPG that repeats for many extensions)
+                is_error_image = (
+                    any(ct in result.content_type.lower() for ct in ['image/gif', 'image/png', 'image/jpeg', 'image/jpg'])
+                    and result.content_length < 150000  # Less than 150KB
+                    and len(extensions) >= 3  # Repeats for 3+ extensions (reduced from 4)
+                )
+                
+                if is_error_image:
+                    return True, f"Generic error image returned for multiple extensions: {', '.join(sorted(extensions))}"
+                else:
+                    return True, f"Same content returned for multiple file extensions: {', '.join(sorted(extensions))}"
     
     # Cache the extracted text content for reuse in multiple comparisons
     text_content = None
@@ -329,16 +381,32 @@ def check_false_positive(
                         if similarity > 0.95:  # 95% similarity threshold for 200/206
                             return True, f"Response text is {similarity:.0%} similar to main page content"
 
-    # Special case for binary content like PDFs - much less likely to be false positives
+    # Special case for binary content like PDFs, certificates, keys - much less likely to be false positives
     # when returning success status codes
     if result.status_code in SUCCESS_STATUSES:
         is_binary = any(ct in result.content_type.lower() for ct in
-                       ['pdf', 'octet-stream', 'image/', 'audio/', 'video/',
-                        'zip', 'excel', 'word', 'powerpoint', 'binary'])
+                       ['pdf', 'octet-stream', 'audio/', 'video/',
+                        'zip', 'excel', 'word', 'powerpoint', 'binary',
+                        'pkcs12', 'x-pkcs12', 'x-x509', 'x-pem'])
 
         if is_binary:
             # Binary content with success code is very likely a real file
+            # ESPECIALLY certificates, keys, and other security-related files
             return False, ""
+        
+        # Special handling for images - only consider real if unique or large
+        is_image = 'image/' in result.content_type.lower()
+        if is_image:
+            # Large images are likely real files
+            if result.content_length > 100000:  # > 100KB
+                return False, ""
+            # Small/medium images that repeat for multiple files are likely error pages
+            # For very small images (< 10KB), be more aggressive (2+ occurrences)
+            # For medium images (10KB-100KB), require 3+ occurrences
+            threshold = 2 if result.content_length < 10000 else 3
+            if size_frequency[size_key] >= threshold:
+                return True, f"Generic error image ({result.content_length:,} bytes) returned for multiple files"
+            # This is also handled above in the extension check
 
     # Check for SPA (Single Page Application) fallback behavior
     if result.status_code in SUCCESS_STATUSES and response_content:

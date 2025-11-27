@@ -94,15 +94,28 @@ def parse_arguments():
     parser.add_argument("-k", "--no-ssl-verify", action="store_true", help="Disable SSL certificate verification")
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose mode (show more details)")
     parser.add_argument("-s", "--silent", action="store_true", help="Silent mode (show only errors)")
+    parser.add_argument("--metrics", action="store_true", help="Show performance metrics at the end of scan")
     parser.add_argument("--version", action="version", version=f"LeftOver v{VERSION}")
     
     return parser.parse_args()
 
 def configure_scanner_from_args(args):
     """Configure the scanner based on command line arguments."""
+    from leftovers.utils.validators import validate_thread_count, validate_timeout
+    
     # Check for incompatible arguments
     if args.verbose and args.silent:
         raise ValueError("Cannot use --verbose and --silent simultaneously")
+
+    # Validate thread count
+    is_valid, error_msg = validate_thread_count(args.threads)
+    if not is_valid:
+        raise ValueError(f"Invalid thread count: {error_msg}")
+    
+    # Validate timeout
+    is_valid, error_msg = validate_timeout(args.timeout)
+    if not is_valid:
+        raise ValueError(f"Invalid timeout: {error_msg}")
 
     # Validate rate limiting options
     if args.rate_limit and args.delay:
@@ -119,7 +132,7 @@ def configure_scanner_from_args(args):
     
     # Update global VERBOSE setting for HTTP request logging
     if args.verbose:
-        import app_settings
+        from leftovers import app_settings
         app_settings.VERBOSE = True
     
     # Configure extensions
@@ -227,10 +240,19 @@ def handle_interrupt(signum, frame):
 
 def main():
     """Main function for the command-line interface."""
+    from leftovers.utils.validators import validate_url
+    
     signal.signal(signal.SIGINT, handle_interrupt)
     
     try:
         args = parse_arguments()
+        
+        # Validate single URL if provided
+        if args.url:
+            is_valid, error_msg = validate_url(args.url)
+            if not is_valid:
+                console.print(f"[bold red]Invalid URL:[/bold red] {error_msg}")
+                sys.exit(1)
         
         scanner = configure_scanner_from_args(args)
         
@@ -248,6 +270,11 @@ def main():
         
         # Always display the summary of results, even in silent mode
         scanner.print_summary()
+        
+        # Show performance metrics if requested
+        if (args.verbose or args.metrics) and hasattr(scanner, 'metrics'):
+            scanner.metrics.finalize()
+            scanner.metrics.print_summary(use_color=not args.no_color)
         
         # Export results if needed
         if args.output:

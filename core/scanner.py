@@ -21,13 +21,15 @@ from leftovers.core.detection import check_false_positive
 from leftovers.utils.logger import logger, setup_logger
 from leftovers.utils.console import (
     console, print_banner, print_info_panel, 
-    create_progress_bar, format_and_print_result, create_url_list_progress
+    create_progress_bar, format_and_print_result, create_url_list_progress,
+    print_section_separator
 )
 from leftovers.utils.file_utils import load_url_list
 from leftovers.utils.http_utils import HttpClient
 from leftovers.utils.url_utils import generate_test_urls
 from leftovers.utils.extension_optimizer import ExtensionOptimizer
 from leftovers.utils.domain_generator import DomainWordlistGenerator
+from leftovers.utils.metrics import ScanMetrics
 
 # Compile regular expressions once for reuse
 SEGMENT_PATTERN = re.compile(r'Segment\s+(\d+)')
@@ -117,6 +119,9 @@ class LeftOver:
         self._hash_frequency_lock = threading.Lock()
         self._found_urls_lock = threading.Lock()
         self._results_lock = threading.Lock()
+        
+        # Performance metrics tracking
+        self.metrics = ScanMetrics()
         
         # Global sanity check results
         self._global_sanity_check_results = {}
@@ -219,6 +224,13 @@ class LeftOver:
         """
         with self._results_lock:
             self.results.append(scan_result)
+            
+            # Track metrics
+            if hasattr(self, 'metrics'):
+                # Extract extension from URL
+                extension = scan_result.url.split('.')[-1].split('?')[0].split('#')[0] if '.' in scan_result.url else None
+                is_fp = getattr(scan_result, 'false_positive', False)
+                self.metrics.record_discovery(is_false_positive=is_fp, extension=extension)
 
     def _thread_safe_add_found_url(self, url: str) -> None:
         """
@@ -412,9 +424,9 @@ class LeftOver:
                     self._thread_safe_add_result(scan_result)
                     return scan_result
                 else:
-                    # Even success codes can be false positives (like SPA fallbacks)
-                    # Still return the result but don't add to results list
-                    return scan_result
+                    # Even success codes can be false positives (like SPA fallbacks, error images)
+                    # Don't show these results - return None to filter them out
+                    return None
             
             # If disable_fp is enabled, report regardless of false positive classification
             if self.disable_fp:
@@ -530,9 +542,10 @@ class LeftOver:
                         self._thread_safe_add_found_url(direct_url)
                         self._thread_safe_add_result(scan_result)
                         found_files = True
-
-                    if not self.silent:
-                        format_and_print_result(console, scan_result, self.use_color, self.verbose, self.silent)
+                        
+                        # Only print if not a false positive (or FP detection is disabled)
+                        if not self.silent:
+                            format_and_print_result(console, scan_result, self.use_color, self.verbose, self.silent)
 
             except Exception as e:
                 if self.verbose:
@@ -629,9 +642,10 @@ class LeftOver:
                             self._thread_safe_add_found_url(direct_url)
                             self._thread_safe_add_result(scan_result)
                             found_files = True
-
-                        if not self.silent:
-                            format_and_print_result(console, scan_result, self.use_color, self.verbose, self.silent)
+                            
+                            # Only print if not a false positive (or FP detection is disabled)
+                            if not self.silent:
+                                format_and_print_result(console, scan_result, self.use_color, self.verbose, self.silent)
 
             except Exception as e:
                 if self.verbose:
@@ -700,7 +714,23 @@ class LeftOver:
             return
         
         # Create a progress bar to display status
-        total_tests = len(test_urls) * len(self.extensions)
+        # Calculate total tests more accurately based on URL type
+        total_tests = 0
+        for base_url, test_type in test_urls:
+            # Critical-specific files are tested exactly once (no extensions added)
+            if test_type == "critical-specific":
+                total_tests += 1
+            else:
+                # Check if URL already has extension
+                url_path = base_url.split('/')[-1]
+                has_extension = False
+                if '.' in url_path:
+                    parts = url_path.split('.')
+                    if len(parts) >= 2 and 2 <= len(parts[-1]) <= 5 and parts[-1].isalnum():
+                        has_extension = True
+                
+                # URLs with extensions are tested once, without extensions test all extensions
+                total_tests += 1 if has_extension else len(self.extensions)
         
         # Always use progress bar, even in silent mode
         progress, task = create_progress_bar(total_tests, self.use_color)
@@ -725,6 +755,13 @@ class LeftOver:
                         # Create mapping of futures to arguments
                         futures = {}
                         for base_url in batch:
+                            # Critical-specific files should NEVER have extensions added
+                            # These are exact filenames that we want to test as-is
+                            if test_type == "critical-specific":
+                                future = executor.submit(self._test_single_url, base_url, "", test_type)
+                                futures[future] = (base_url, "")
+                                continue
+                            
                             # Check if URL already has an extension (from domain wordlist generation)
                             url_path = base_url.split('/')[-1]  # Get the last part of the URL
                             has_extension = False
@@ -815,8 +852,10 @@ class LeftOver:
                 
             else:
                 # Default format for other test types
-                console.print(f"[bold green]Testing:[/bold green] {test_type} [bold cyan]({url_display})[/bold cyan]")
+                print_section_separator()
+                console.print(f"\n[bold green]Testing:[/bold green] {test_type} [bold cyan]({url_display})[/bold cyan]")
         else:
+            print_section_separator(use_color=False)
             if match_brute_force:
                 word = match_brute_force.group(1)
                 parsed = urllib.parse.urlparse(example_url)
