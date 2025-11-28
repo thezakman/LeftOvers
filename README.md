@@ -1,6 +1,6 @@
 # LeftOvers
 
-![Version](https://img.shields.io/badge/version-1.2.6-blue.svg)
+![Version](https://img.shields.io/badge/version-1.4.9-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.7+-green.svg)
 ![License](https://img.shields.io/badge/license-MIT-orange.svg)
 ![Performance](https://img.shields.io/badge/performance-optimized-brightgreen.svg)
@@ -8,11 +8,13 @@
 **LeftOvers** is an advanced, high-performance scanner for detecting residual or "forgotten" files on web servers.
 
 **Key Features:**
-- Adaptive Threading** - Automatically adjusts performance based on target speed
-- **LRU Caching** - 30-40% better cache hit rates for faster scans
-- **Rate Limiting** - Control scan speed to avoid detection
+- **Scan Levels (0-4)** - From ultra-fast critical-only to exhaustive scans
+- **Language Filtering** - Filter wordlists by language (English, Portuguese, All)
+- **Smart Baseline Detection** - Eliminates false positives by analyzing server behavior
+- **Priority Testing** - Tests critical files (certificates, .env, keys) first
+- **Performance Metrics** - Detailed scan statistics with `--metrics`
+- **Adaptive Threading** - Automatically adjusts performance based on target speed
 - **Thread-Safe** - Fully synchronized concurrent operations
-- **Smart Detection** - Advanced false-positive filtering
 
 ![LeftOvers Scanner Tool](LeftOver.png)
 
@@ -79,17 +81,26 @@ LeftOvers/
 ## 🚀 Quick Start
 
 ```bash
-# Basic scan
-python LeftOvers.py -u http://example.com
+# Ultra-fast critical files only
+leftovers -u http://example.com --level 0
 
-# Fast and aggressive scan
-python LeftOvers.py -u http://example.com -b --threads 30
+# Quick scan with essential coverage
+leftovers -u http://example.com --level 1
+
+# Balanced scan (default)
+leftovers -u http://example.com
+
+# Deep scan with metrics
+leftovers -u http://example.com --level 3 --metrics
+
+# Exhaustive scan with brute force (Portuguese)
+leftovers -u http://example.com --level 4 -b --lang pt-br
 
 # Stealth mode (slow but harder to detect)
-python LeftOvers.py -u http://example.com --rate-limit 2 -ra
+leftovers -u http://example.com --rate-limit 2 -ra
 
 # Full-featured scan with domain wordlist
-python LeftOvers.py -u http://example.com -b -d -br --output results.json
+leftovers -u http://example.com -b -d -br --output results.json
 ```
 
 ## 📖 Usage
@@ -97,30 +108,68 @@ python LeftOvers.py -u http://example.com -b -d -br --output results.json
 ### Basic Examples
 
 ```bash
-# Scan a single URL
-python LeftOvers.py -u http://example.com
+# Scan a single URL (uses installed command)
+leftovers -u http://example.com
 
 # Run as a module
-python -m LeftOvers -u http://example.com
+python -m leftovers -u http://example.com
 
 # Scan multiple URLs from a file
-python LeftOvers.py -l urls.txt
+leftovers -l urls.txt
+
+# Scan with specific level
+leftovers -u http://example.com --level 2
+```
+
+### Scan Levels
+
+```bash
+# Level 0 - Critical Only (~10-15 tests) - Ultra-fast, only critical files
+leftovers -u http://example.com --level 0
+
+# Level 1 - Quick (~500 tests) - Fast scan with essential extensions
+leftovers -u http://example.com --level 1
+
+# Level 2 - Balanced (~2-3K tests) - DEFAULT - Good balance of speed/coverage
+leftovers -u http://example.com --level 2
+
+# Level 3 - Deep (~5-6K tests) - Comprehensive scan
+leftovers -u http://example.com --level 3
+
+# Level 4 - Exhaustive (~6-10K tests) - Maximum coverage
+leftovers -u http://example.com --level 4
+```
+
+### Language Filtering
+
+```bash
+# English words only (brute force mode)
+leftovers -u http://example.com -b --lang en
+
+# Portuguese words only (brute force mode)
+leftovers -u http://example.com -b --lang pt-br
+
+# All languages (default)
+leftovers -u http://example.com -b --lang all
 ```
 
 ### Advanced Features
 
 ```bash
 # Enable brute force mode with common backup words
-python LeftOvers.py -u http://example.com -b
+leftovers -u http://example.com -b
 
 # Enable recursive brute force mode (test each path level)
-python LeftOvers.py -u http://example.com -br
+leftovers -u http://example.com -br
 
 # Enable dynamic domain-based wordlist generation
-python LeftOvers.py -u http://example.com -d
+leftovers -u http://example.com -d
+
+# Show performance metrics at the end
+leftovers -u http://example.com --metrics
 
 # Enable brute force mode with custom wordlist
-python LeftOvers.py -u http://example.com -b --wordlist wordlists/custom.txt
+leftovers -u http://example.com -b --wordlist wordlists/custom.txt
 
 # Export results to JSON file
 python LeftOvers.py -u http://example.com --output results.json
@@ -172,39 +221,54 @@ python LeftOvers.py --help
 
 - Python 3.7+
 - Required Python packages:
-  - requests>=2.27.1
-  - colorama>=0.4.4
-  - rich>=12.0.0
-  - tqdm>=4.62.3
-  - urllib3>=1.26.8
-  - tldextract>=3.1.2
-  - pyOpenSSL>=22.0.0
-  - cryptography>=36.0.0
-  - concurrent-futures-pool>=1.0.0
+  - requests>=2.31.0
+  - colorama>=0.4.6
+  - rich>=13.4.2
+  - tqdm>=4.66.1
+  - urllib3>=2.0.4
+  - tldextract>=3.4.4
+  - pyOpenSSL>=23.2.0
+  - cryptography>=41.0.3
 
 ## 🔧 Features
 
-- **Intelligent Detection**: Advanced algorithms to filter false positives with thread-safe implementation
-- **Multi-Format Support**: Tests over 120 common file extensions
-- **Brute Force Mode**: Test directories and files using common keywords
-- **Dynamic Domain Wordlists**: Generates intelligent backup file patterns based on domain analysis
+### Core Features
+- **Scan Levels (0-4)**: Choose between ultra-fast critical-only scans (~15 tests) to exhaustive scans (~10K+ tests)
+- **Baseline Detection**: Analyzes server behavior before testing to eliminate false positives
+- **Priority Testing**: Tests critical files first (certificate.pfx, .env, private keys, etc.)
+- **Language Filtering**: Filter brute force wordlists by language (English, Portuguese, All)
+- **Performance Metrics**: Detailed scan statistics with `--metrics` flag
+
+### Intelligent Detection
+- **False Positive Filtering**: Advanced baseline comparison with content hash analysis
+- **Multi-Format Support**: Tests 230+ file extensions across multiple categories
 - **Smart Extension Prioritization**: Automatically prioritizes extensions based on target context
-- **Performance Optimizations** (v1.2.6+):
-  - **Adaptive Threading**: Automatically adjusts thread count based on target latency
-  - **LRU Cache**: Intelligent caching system with 30-40% better hit rates
-  - **Rate Limiting**: Control scan speed with `--rate-limit` or `--delay`
-  - **Thread-Safe Operations**: All concurrent operations are properly synchronized
-- **Efficient Management**:
-  - Intelligently detects and handles large files (>10MB)
-  - Avoids result duplication
-  - Optimized for low resource consumption
-  - Code deduplication reduces memory footprint
-- **Custom Filters**: By status code, content size, and content type
-- **Rich Interface**: Colored console with progress bars
-- **Report Export**: JSON format for integration with other tools
-- **Custom Headers**: Support for custom HTTP headers
-- **User-Agent Rotation**: Random User-Agent rotation to avoid detection
+- **Sanity Checking**: Pre-scan analysis to understand server error behavior
+
+### Performance & Optimization
+- **Adaptive Threading**: Automatically adjusts thread count based on target latency
+- **LRU Cache**: Intelligent caching system with 30-40% better hit rates
+- **Rate Limiting**: Control scan speed with `--rate-limit` or `--delay`
+- **Thread-Safe Operations**: All concurrent operations properly synchronized
+- **Efficient Memory Management**: Handles large files (>10MB) intelligently
+
+### Brute Force Capabilities
+- **Standard Mode**: Test directories and files using 580+ common keywords
+- **Recursive Mode**: Test each path level independently
+- **Domain Wordlists**: Generates intelligent backup file patterns based on domain analysis
+- **Custom Wordlists**: Support for custom wordlist files
+
+### Output & Reporting
+- **Rich Interface**: Colored console with progress bars and formatted tables
+- **JSON Export**: Machine-readable output for integration with other tools
 - **Per-URL Output**: Option to create separate reports for each analyzed URL
+- **Custom Filters**: By status code, content size, and content type
+
+### HTTP Features
+- **Custom Headers**: Support for custom HTTP headers and cookies
+- **User-Agent Rotation**: Random User-Agent rotation to avoid detection
+- **SSL Control**: Option to disable SSL verification for trusted targets
+- **Timeout Control**: Configurable request timeouts
 
 ## 🔍 Configuration
 
@@ -280,33 +344,47 @@ Contributions are welcome! Feel free to open issues or submit pull requests.
 
 ## 📝 Changelog
 
-### v1.2.6 (Latest)
+### v1.4.9 (Latest)
+
+**🎯 Major Features:**
+- **Scan Levels (0-4)**: Progressive complexity levels from critical-only to exhaustive
+  - Level 0: ~10-15 tests (critical files only)
+  - Level 1: ~500 tests (quick scan)
+  - Level 2: ~2-3K tests (balanced, default)
+  - Level 3: ~5-6K tests (deep scan)
+  - Level 4: ~6-10K tests (exhaustive)
+- **Language Filtering**: `--lang` option to filter wordlists (en, pt-br, all)
+- **Performance Metrics**: `--metrics` flag shows detailed scan statistics with rich formatting
+- **Baseline Detection**: Advanced false positive filtering by analyzing server behavior
+- **Priority Testing**: Critical files (certificates, .env, keys) tested first
 
 **🐛 Bug Fixes:**
-- Fixed `@lru_cache` bug in `_extract_text_content` that caused crashes with bytes parameters
-- Eliminated ~400 lines of duplicated code between `process_url` and `_process_url_without_progress`
-- Fixed race conditions in shared dictionaries (`_size_frequency`, `_hash_frequency`) with thread-safe locks
+- Fixed empty extensions list being replaced by DEFAULT_EXTENSIONS
+- Removed all duplicates from config.py (extensions, files, words)
+- Fixed false positive detection with content hash comparison
+- Fixed progress bar calculation and display
+- Fixed pkg_resources deprecation (moved to importlib.metadata)
 
 **⚡ Performance Improvements:**
-- **Rate Limiting**: New `--rate-limit` and `--delay` options for controlling scan speed
-- **LRU Cache**: Replaced FIFO cache with intelligent LRU cache (30-40% better hit rates)
-- **Adaptive Threading**: Automatically adjusts thread count based on target latency:
-  - Fast targets (<100ms): Increases threads by 20%
-  - Slow targets (>500ms): Decreases threads by 30%
-  - Adjusts every 50 requests for optimal performance
-- **Thread-Safe Operations**: All concurrent operations properly synchronized with locks
+- Reorganized to `leftovers.*` namespace package
+- Refactored config helpers into separate module
+- Cleaned up 230+ extensions organization
+- Sanity check now runs before critical file testing
+- Headers only shown when results exist
 
 **🔧 Technical Improvements:**
-- Created reusable helper functions (`_perform_important_extension_tests`, `_perform_direct_extension_tests`)
-- Added thread-safe wrappers for critical operations
-- Implemented `LRUCache` class with O(1) operations using `OrderedDict`
-- Better memory management with reduced code duplication
+- Created `core/helpers.py` for configuration management
+- Added `utils/validators.py` for input validation
+- Added `utils/metrics.py` for performance tracking
+- Improved console output formatting with Rich tables
+- Better organization of extensions by category
 
 **📊 Statistics:**
-- Reduced codebase by ~400 lines
-- 3 critical bugs fixed
-- 3 major performance features added
-- 100% thread-safety improvement
+- 5 scan levels (0-4)
+- 230+ file extensions tested
+- 580+ backup keywords
+- Smart baseline detection
+- Zero duplicate tests
 
 ## 📄 License
 

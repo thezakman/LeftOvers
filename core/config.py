@@ -39,9 +39,7 @@ DEFAULT_HEADERS = {
 # HIGH PRIORITY - Most likely to contain sensitive leftovers
 CRITICAL_BACKUP_EXTENSIONS = [
     "bak", "backup", "old", "orig", "save", "copy", "tmp", "temp", "~",
-    "sql", "dump", "db", "sqlite", "sqlite3", "mdb", "accdb", "asp", "aspx",
-    "zip", "rar", "tar", "tar.gz", "7z", "tgz", "gz", "bz2", "php", "jsp", "py",
-    "env", "config", "cfg", "conf", "ini", "json", "xml", "yaml", "yml",
+    "asp", "aspx", "php", "jsp", "py",
 ]
 
 # MEDIUM PRIORITY - Configuration and log files
@@ -59,7 +57,7 @@ BACKUP_SUFFIXES = [
 
 # ARCHIVE EXTENSIONS - Compressed files likely to be backups
 ARCHIVE_EXTENSIONS = [
-    "zip", "rar", "tar", "tar.gz", "tar.bz2", "tar.xz", "tgz", "tbz2", "txz",
+    "zip", "rar", "tar", "tgz", "tbz2", "txz",
     "7z", "gz", "gzip", "bz2", "xz", "lzma", "z", "Z", "ace", "arj",
 ]
 
@@ -72,14 +70,14 @@ DATABASE_EXTENSIONS = [
 # CONFIGURATION FILES - Sensitive configuration leftovers
 CONFIG_EXTENSIONS = [
     "env", "config", "cfg", "conf", "ini", "yaml", "yml", "json", "xml",
-    "properties", "plist", "toml", "settings", "lock", "pid",
+    "properties", "plist", "toml",
 ]
 
 # EDITOR/IDE LEFTOVERS - Temporary files left by editors
 IDE_LEFTOVER_EXTENSIONS = [
     "swp", "swo", "swn", "tmp~", "tmp.swp", "tmp.save", "sml",
-    "autosave", "kate-swp", "bak~", "backup~", ".#", "#",
-    "~1", "~2", "~3", "$$$", "___", ".tmp", ".temp",
+    "autosave", "kate-swp", "bak~", "backup~", ".tmp", ".temp",
+    #".#", "#", "~1", "~2", "~3", "$$$",
 ]
 
 # SOURCE CODE BACKUPS - Code files with backup extensions
@@ -98,8 +96,8 @@ CODE_BACKUP_EXTENSIONS = [
 
 # VERSION CONTROL LEFTOVERS - Files left by VCS operations
 VCS_LEFTOVER_EXTENSIONS = [
-    "rej", "patch", "diff", "merge", "orig", "mine", "theirs",
-    "r1", "r2", "working", "conflict", "BASE", "LOCAL", "REMOTE",
+    #"rej", "patch", "diff", "merge", "orig", "mine", "theirs",
+    #"working", "conflict", "BASE", "LOCAL", "REMOTE",
 ]
 
 # SENSITIVE DOCUMENT BACKUPS - Documents that might contain sensitive data
@@ -115,7 +113,6 @@ SECURITY_EXTENSIONS = [
     "htpasswd", "passwd", "shadow", "pwd", "secret", "credentials",
     "token", "auth", "oauth", "session", "cookie", "api_key",
     "private", "public", "rsa", "dsa", "ssh", "gpg", "pgp",
-    "ca_bundle.crt", "certificate.pfx", "private.key",
 ]
 
 # ENVIRONMENT AND BUILD FILES - Configuration and build artifacts
@@ -128,8 +125,7 @@ BUILD_CONFIG_EXTENSIONS = [
 EXTRAS_EXTENSIONS = [
     "wml", "bkl", "wmls", "udl", "bat", "dll", "reg", "cmd", "vbs",
     "hta", "wsf", "cpl", "msc", "lnk", "url", "inf", "ins", "isp",
-    "teste.asp", "test.asp", "teste.aspx", "test.aspx", "teste.php", "test.php",
-    "ash", "ashx", "master.cs", "publishproj", "cvs", "xls", "xlsx"
+    "ash", "ashx", "cs", "publishproj", "cvs",
 ]
 
 # SPECIFIC FILES - Complete filenames that should be tested directly
@@ -138,7 +134,7 @@ CRITICAL_SPECIFIC_FILES = [
     # Certificates and keys (HIGHEST PRIORITY)
     "certificate.pfx", "private.key", "ca_bundle.crt",
     # Environment files
-    ".env", ".environment", ".envrc", ".envs", ".env~",
+    ".env", ".environment", ".envrc", ".envs",
     # Access tokens
     "accesstoken", "accesstokens.json",
     # Web configuration
@@ -153,18 +149,17 @@ SPECIFIC_FILES = [
     # Build and deployment
     ".dockerignore", ".npmrc",
     # Environment config
-    "env-config.js", "env.js",
+    "env-config.js", "env.js", "environment.js", "environment.json", "environment.ts",
     # Other files
-    ".DS_Store", ".well-known", "robots.txt",
-    "lixo_eletronico.sql", "site-api", "site.js",
-    "log_all", "log_crm", "log-event", "log.mdb",
-    "latest-logs.zip", "wp.php",
+    ".DS_Store", ".well-known", "robots.txt", "sitemap.xml",
+    "log_all", "error_log", "access_log", "log.mdb",
+    "latest-logs.zip",
 ]
 
 # VCS AND GIT FILES - Version control specific files
 VCS_SPECIFIC_FILES = [
     ".git/config", ".svn/entries", ".git", ".gitignore", ".gitattributes",
-    ".gitmodules", ".hgignore", ".hgsub", ".hgsubstate", "web.config",
+    ".gitmodules", ".hgignore", ".hgsub", ".hgsubstate",
 ]
 
 # Create the final DEFAULT_EXTENSIONS list from all categories
@@ -173,6 +168,9 @@ DEFAULT_EXTENSIONS = [
     *CONFIG_LOG_EXTENSIONS,
     *SECURITY_EXTENSIONS,
     *CODE_BACKUP_EXTENSIONS,
+    *DATABASE_EXTENSIONS,
+    *CONFIG_EXTENSIONS,
+    *ARCHIVE_EXTENSIONS,
     *IDE_LEFTOVER_EXTENSIONS,
     *VCS_LEFTOVER_EXTENSIONS,
     *DOCUMENT_BACKUP_EXTENSIONS,
@@ -312,121 +310,3 @@ DEFAULT_BACKUP_WORDS = [
     *PTBR_TECHNICAL_WORDS,
     *DATABASE_CONFIG_WORDS,
 ]
-
-# ─── Helper Functions ───────────────────────────────────────
-
-def get_extensions_by_priority(priority: str = "all") -> list:
-    """
-    Get extensions filtered by priority level.
-    
-    Args:
-        priority: Priority level - "critical", "high", "medium", "all"
-    
-    Returns:
-        List of extensions for the specified priority
-    """
-    if priority == "critical":
-        return CRITICAL_BACKUP_EXTENSIONS
-    elif priority == "high":
-        return [*CRITICAL_BACKUP_EXTENSIONS, *SECURITY_EXTENSIONS, *CODE_BACKUP_EXTENSIONS]
-    elif priority == "medium":
-        return [*CRITICAL_BACKUP_EXTENSIONS, *SECURITY_EXTENSIONS, 
-                *CODE_BACKUP_EXTENSIONS, *CONFIG_LOG_EXTENSIONS]
-    else:  # all
-        return DEFAULT_EXTENSIONS
-
-def get_extensions_by_category(category: str) -> list:
-    """
-    Get extensions by specific category.
-    
-    Args:
-        category: Category name - "backup", "database", "config", "security", 
-                  "archive", "code", "ide", "vcs", "document", "build"
-    
-    Returns:
-        List of extensions for the specified category
-    """
-    categories = {
-        "backup": CRITICAL_BACKUP_EXTENSIONS,
-        "database": DATABASE_EXTENSIONS,
-        "config": CONFIG_EXTENSIONS,
-        "security": SECURITY_EXTENSIONS,
-        "archive": ARCHIVE_EXTENSIONS,
-        "code": CODE_BACKUP_EXTENSIONS,
-        "ide": IDE_LEFTOVER_EXTENSIONS,
-        "vcs": VCS_LEFTOVER_EXTENSIONS,
-        "document": DOCUMENT_BACKUP_EXTENSIONS,
-        "build": BUILD_CONFIG_EXTENSIONS,
-    }
-    return categories.get(category, [])
-
-def get_optimized_extension_set(max_extensions: int = 50) -> list:
-    """
-    Get an optimized set of most effective extensions for fast scanning.
-    
-    Args:
-        max_extensions: Maximum number of extensions to return
-    
-    Returns:
-        List of most effective extensions limited to max_extensions
-    """
-    # Prioritize most common and dangerous leftovers
-    priority_order = [
-        *CRITICAL_BACKUP_EXTENSIONS[:15],  # Top backup extensions
-        *SECURITY_EXTENSIONS[:10],          # Top security files
-        *DATABASE_EXTENSIONS[:8],           # Top database files
-        *CODE_BACKUP_EXTENSIONS[:10],       # Top code backups
-        *CONFIG_EXTENSIONS[:7],             # Top config files
-    ]
-    return priority_order[:max_extensions]
-
-def get_words_by_language(language: str = "all") -> list:
-    """
-    Get backup words filtered by language.
-    
-    Args:
-        language: Language filter - "en", "pt-br", "all"
-    
-    Returns:
-        List of backup words for the specified language
-    """
-    if language == "en":
-        return [*DEFAULT_FILES_WORDS, *EN_COMMON_WORDS, *BACKUP_DIRECTORY_WORDS,
-                *WEB_RELATED_WORDS, *VERSION_CONTROL_WORDS, *DATE_VERSION_WORDS]
-    elif language == "pt-br":
-        return [*DEFAULT_FILES_WORDS, *PTBR_COMMON_WORDS, *PTBR_BUSINESS_WORDS,
-                *PTBR_CORPORATE_WORDS, *PTBR_TECHNICAL_WORDS, *BACKUP_DIRECTORY_WORDS]
-    else:  # all
-        return DEFAULT_BACKUP_WORDS
-
-def get_specific_files(priority: str = "all") -> list:
-    """
-    Get list of specific complete filenames to test directly.
-    
-    These files are tested as-is without extension manipulation.
-    Critical files (certificates, keys, .env) are returned first.
-    
-    Args:
-        priority: Filter by priority - "critical", "all"
-    
-    Returns:
-        List of specific filenames to test, ordered by priority
-    """
-    if priority == "critical":
-        return CRITICAL_SPECIFIC_FILES
-    else:
-        # Return critical files first, then others
-        return [*CRITICAL_SPECIFIC_FILES, *SPECIFIC_FILES, *VCS_SPECIFIC_FILES]
-
-def get_all_test_targets() -> dict:
-    """
-    Get all test targets organized by type.
-    
-    Returns:
-        Dictionary with extensions, words, and specific files
-    """
-    return {
-        "extensions": DEFAULT_EXTENSIONS,
-        "words": DEFAULT_BACKUP_WORDS,
-        "specific_files": get_specific_files()
-    }

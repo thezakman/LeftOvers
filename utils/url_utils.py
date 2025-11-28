@@ -188,7 +188,7 @@ def _generate_critical_file_tests(add_test, scheme, full_hostname, baseline_resp
         baseline_responses: Baseline responses from sanity check to understand server behavior
         verbose: Enable verbose logging
     """
-    from leftovers.core.config import get_specific_files
+    from leftovers.core.helpers import get_specific_files
     
     full_url_base = f"{scheme}://{full_hostname}"
     critical_files = get_specific_files(priority="critical")

@@ -128,8 +128,7 @@ def generate_summary_report(results: List[ScanResult], console: Console, use_col
         logger.debug(f"Total size of all content: {format_size(total_size)}")
         
     # Create a summary table with enhanced styling
-    title_style = "bold cyan" if use_color else ""
-    table = Table(title="Results Summary", title_style=title_style, box=box.ROUNDED)
+    table = Table(box=box.ROUNDED)
     table.add_column("Statistic", style="cyan" if use_color else "", no_wrap=True)
     table.add_column("Value", style="magenta" if use_color else "", justify="right")
     table.add_column("Notes", style="dim" if use_color else "")
@@ -185,6 +184,7 @@ def generate_summary_report(results: List[ScanResult], console: Console, use_col
             f"Most common: {top_types_str}"
         )
     
+    console.print("Results Summary:")
     console.print(table)
     
     # If found interesting results, show the top findings with the enhanced report

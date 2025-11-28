@@ -61,7 +61,7 @@ class LeftOver:
                  rate_limit: float = None,
                  delay_ms: int = None):
         """Initialize the scanner with the provided settings."""
-        self.extensions = extensions or DEFAULT_EXTENSIONS
+        self.extensions = extensions if extensions is not None else DEFAULT_EXTENSIONS
         self.extension_optimizer = ExtensionOptimizer()
         self.domain_generator = DomainWordlistGenerator()
         self.timeout = timeout
@@ -743,7 +743,9 @@ class LeftOver:
         with progress:
             # Process groups by test type
             for test_type, urls_for_type in test_url_groups.items():
-                self._display_test_type_header(test_type, urls_for_type[0])
+                # Track if we found any results in this test type to show header
+                found_results_in_group = False
+                header_shown = False
                 
                 # Process in batches for better balancing and avoiding overload
                 batch_size = min(100, len(urls_for_type))
@@ -787,14 +789,21 @@ class LeftOver:
                             
                             result = future.result()
                             if result:
+                                # Show header only when first result is found
+                                if not header_shown:
+                                    self._display_test_type_header(test_type, urls_for_type[0])
+                                    header_shown = True
+                                    found_results_in_group = True
+                                
                                 # Display result if found
                                 format_and_print_result(console, result, self.use_color, self.verbose, self.silent)
                 
-                # Add a blank line after each test group
-                if self.use_color:
-                    console.print()
-                else:
-                    print()
+                # Add a blank line after each test group ONLY if we showed results
+                if found_results_in_group:
+                    if self.use_color:
+                        console.print()
+                    else:
+                        print()
         
         # Record end time for statistics
         self.stats['end_time'] = time.time()

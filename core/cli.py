@@ -76,6 +76,10 @@ def parse_arguments():
     parser.add_argument("-br", "--brute-recursive", action="store_true", help="Enable recursive brute force mode (test each path level)")
     parser.add_argument("-d", "--domain-wordlist", action="store_true", help="Enable dynamic domain-based wordlist generation (generates domain-specific permutations)")
     parser.add_argument("--fast-scan", action="store_true", help="Quick scan mode: brute force + domain wordlist + optimized extensions")
+    parser.add_argument("--level", type=int, choices=[0, 1, 2, 3, 4], default=2, 
+                       help="Scan complexity level: 0=Critical only (~10-15), 1=Quick (~500), 2=Balanced (~2-3K, default), 3=Deep (~5-8K), 4=Exhaustive (~5-10K, ~100K+ with -b)")
+    parser.add_argument("--lang", type=str, choices=["en", "pt-br", "all"], default="all",
+                       help="Language filter for brute force words: en=English only, pt-br=Portuguese only, all=Both (default)")
     
     # Filters
     parser.add_argument("-sc", "--status", help="Filter by status codes (e.g., 200,301,403)")
@@ -135,15 +139,35 @@ def configure_scanner_from_args(args):
         from leftovers import app_settings
         app_settings.VERBOSE = True
     
-    # Configure extensions
+    # Configure extensions and words based on level
+    from leftovers.core.helpers import get_config_by_level, get_words_by_language
+    level_config = get_config_by_level(args.level)
+    
+    # Show level info
+    if not args.silent:
+        logger.info(f"Scan level {args.level}: {level_config['description']}")
+        if args.lang != "all" and not args.silent:
+            logger.info(f"Language filter: {args.lang}")
+    
     extensions = None
+    # Apply language filter to words
+    if args.lang != "all":
+        backup_words = get_words_by_language(args.lang)
+    else:
+        backup_words = level_config['words']  # Get words from level config
+    
     if args.extensions:
+        # User specified extensions override level
         extensions = [e.strip().lstrip('.').lower() for e in args.extensions.split(',')]
     elif args.wordlist:
+        # User specified wordlist overrides level
         extensions = load_wordlist(args.wordlist)
         if not extensions:
-            logger.error("Failed to load wordlist. Using default extensions.")
-            extensions = DEFAULT_EXTENSIONS
+            logger.error("Failed to load wordlist. Using level-based extensions.")
+            extensions = level_config['extensions']
+    else:
+        # Use level-based extensions
+        extensions = level_config['extensions']
     
     # Configure HTTP headers
     headers = DEFAULT_HEADERS.copy()
@@ -194,7 +218,10 @@ def configure_scanner_from_args(args):
             
     # Add brute force capability if requested, including fast-scan mode
     if args.brute or args.brute_recursive or args.domain_wordlist or args.fast_scan:
-        backup_words = DEFAULT_BACKUP_WORDS.copy()
+        # If brute mode is enabled, use full word list (override level for brute)
+        if args.brute and args.level < 3:
+            backup_words = DEFAULT_BACKUP_WORDS.copy()
+        # Otherwise backup_words already set from level_config above
 
         # Configure fast-scan mode (enables multiple features at once)
         if args.fast_scan:

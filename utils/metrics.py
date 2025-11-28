@@ -198,36 +198,122 @@ class ScanMetrics:
             use_color: Whether to use colored output
         """
         from leftovers.utils.console import console
+        from rich.table import Table
         
         summary = self.get_summary()
         
         if use_color:
-            console.print("\n[bold cyan]═══ Scan Metrics ═══[/bold cyan]")
-            console.print(f"[green]Duration:[/green] {summary['timing']['duration']}s")
-            console.print(f"[green]Total Requests:[/green] {summary['requests']['total']}")
-            console.print(f"[green]Success Rate:[/green] {summary['requests']['success_rate']}%")
-            console.print(f"[green]Requests/sec:[/green] {summary['requests']['requests_per_second']}")
-            console.print(f"[green]Avg Response Time:[/green] {summary['performance']['avg_response_time']}s")
-            console.print(f"[green]Data Downloaded:[/green] {summary['data']['mb_downloaded']} MB")
-            console.print(f"[green]Files Found:[/green] {summary['discoveries']['files_found']}")
+            # Create performance metrics table
+            table = Table(show_header=True, header_style="bold cyan", border_style="cyan")
+            table.add_column("Metric", style="white", width=25)
+            table.add_column("Value", justify="right", style="green")
+            table.add_column("Details", style="dim")
             
-            if summary['discoveries']['false_positives'] > 0:
-                console.print(f"[yellow]False Positives:[/yellow] {summary['discoveries']['false_positives']} ({summary['discoveries']['false_positive_rate']}%)")
+            # Timing
+            duration = summary['timing']['duration']
+            table.add_row(
+                "Scan Duration",
+                f"{duration:.2f}s",
+                f"({duration/60:.1f} minutes)" if duration > 60 else ""
+            )
             
-            if summary['errors']['timeout'] > 0 or summary['errors']['connection'] > 0:
-                console.print(f"[red]Errors:[/red] {summary['errors']['timeout']} timeouts, {summary['errors']['connection']} connection errors")
+            # Requests
+            total_req = summary['requests']['total']
+            success_req = summary['requests']['successful']
+            failed_req = summary['requests']['failed']
+            table.add_row(
+                "Total Requests",
+                f"{total_req:,}",
+                f"✓ {success_req:,} success, ✗ {failed_req:,} failed" if failed_req > 0 else f"✓ All successful"
+            )
+            
+            # Success rate
+            success_rate = summary['requests']['success_rate']
+            rate_style = "green" if success_rate >= 95 else "yellow" if success_rate >= 80 else "red"
+            table.add_row(
+                "Success Rate",
+                f"[{rate_style}]{success_rate:.1f}%[/{rate_style}]",
+                ""
+            )
+            
+            # Throughput
+            rps = summary['requests']['requests_per_second']
+            table.add_row(
+                "Throughput",
+                f"{rps:.2f} req/s",
+                ""
+            )
+            
+            # Response times
+            avg_time = summary['performance']['avg_response_time']
+            min_time = summary['performance']['min_response_time']
+            max_time = summary['performance']['max_response_time']
+            table.add_row(
+                "Response Times",
+                f"{avg_time:.3f}s avg",
+                f"min: {min_time:.3f}s, max: {max_time:.3f}s"
+            )
+            
+            # Data transfer
+            mb_down = summary['data']['mb_downloaded']
+            table.add_row(
+                "Data Downloaded",
+                f"{mb_down:.2f} MB",
+                f"({summary['data']['bytes_downloaded']:,} bytes)"
+            )
+            
+            # Discoveries
+            files = summary['discoveries']['files_found']
+            fp = summary['discoveries']['false_positives']
+            fp_rate = summary['discoveries']['false_positive_rate']
+            files_text = f"{files:,}"
+            if fp > 0:
+                files_text = f"[yellow]{files:,}[/yellow]"
+            table.add_row(
+                "Files Found",
+                files_text,
+                f"[dim]{fp} false positives ({fp_rate:.1f}%)[/dim]" if fp > 0 else "[green]✓ No false positives[/green]"
+            )
+            
+            # Errors (if any)
+            timeout_err = summary['errors']['timeout']
+            conn_err = summary['errors']['connection']
+            if timeout_err > 0 or conn_err > 0:
+                table.add_row(
+                    "[red]Errors[/red]",
+                    f"[red]{timeout_err + conn_err}[/red]",
+                    f"[dim]{timeout_err} timeouts, {conn_err} connection errors[/dim]"
+                )
+            
+            # Status codes breakdown (if interesting)
+            if len(summary['status_codes']) > 1:
+                status_text = ", ".join([f"{code}: {count}" for code, count in sorted(summary['status_codes'].items())])
+                table.add_row(
+                    "Status Codes",
+                    f"{len(summary['status_codes'])} types",
+                    f"[dim]{status_text}[/dim]"
+                )
+            
+            # Print without panel (just title and table)
+            console.print()
+            console.print("Performance Metrics:")
+            console.print(table)
+            
         else:
-            print("\n=== Scan Metrics ===")
-            print(f"Duration: {summary['timing']['duration']}s")
-            print(f"Total Requests: {summary['requests']['total']}")
-            print(f"Success Rate: {summary['requests']['success_rate']}%")
-            print(f"Requests/sec: {summary['requests']['requests_per_second']}")
-            print(f"Avg Response Time: {summary['performance']['avg_response_time']}s")
-            print(f"Data Downloaded: {summary['data']['mb_downloaded']} MB")
-            print(f"Files Found: {summary['discoveries']['files_found']}")
+            print("\n" + "="*60)
+            print("Performance Metrics".center(60))
+            print("="*60)
+            print(f"Scan Duration:       {summary['timing']['duration']:.2f}s")
+            print(f"Total Requests:      {summary['requests']['total']:,}")
+            print(f"Success Rate:        {summary['requests']['success_rate']:.1f}%")
+            print(f"Throughput:          {summary['requests']['requests_per_second']:.2f} req/s")
+            print(f"Avg Response Time:   {summary['performance']['avg_response_time']:.3f}s")
+            print(f"Data Downloaded:     {summary['data']['mb_downloaded']:.2f} MB")
+            print(f"Files Found:         {summary['discoveries']['files_found']}")
             
             if summary['discoveries']['false_positives'] > 0:
-                print(f"False Positives: {summary['discoveries']['false_positives']} ({summary['discoveries']['false_positive_rate']}%)")
+                print(f"False Positives:     {summary['discoveries']['false_positives']} ({summary['discoveries']['false_positive_rate']:.1f}%)")
             
             if summary['errors']['timeout'] > 0 or summary['errors']['connection'] > 0:
-                print(f"Errors: {summary['errors']['timeout']} timeouts, {summary['errors']['connection']} connection errors")
+                print(f"Errors:              {summary['errors']['timeout']} timeouts, {summary['errors']['connection']} connection errors")
+            print("="*60)
