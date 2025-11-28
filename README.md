@@ -7,6 +7,8 @@
 
 **LeftOvers** is an advanced, high-performance scanner for detecting residual or "forgotten" files on web servers.
 
+![LeftOvers Scanner Tool](LeftOver.png)
+
 **Key Features:**
 - **Scan Levels (0-4)** - From ultra-fast critical-only to exhaustive scans
 - **Language Filtering** - Filter wordlists by language (English, Portuguese, All)
@@ -16,7 +18,6 @@
 - **Adaptive Threading** - Automatically adjusts performance based on target speed
 - **Thread-Safe** - Fully synchronized concurrent operations
 
-![LeftOvers Scanner Tool](LeftOver.png)
 
 ## 📋 Installation
 
