@@ -34,7 +34,6 @@ from leftovers.core.config import (
     VCS_SPECIFIC_FILES,
     BACKUP_SUFFIXES,
     DATABASE_CONFIG_WORDS,
-    PTBR_TECHNICAL_WORDS,
 )
 
 

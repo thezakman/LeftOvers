@@ -40,7 +40,7 @@ def get_terminal_width():
         # Use actual terminal width, but ensure minimum width for readability
         # Only enforce minimum if the terminal is really narrow (less than 80)
         return max(width, 80)
-    except:
+    except Exception:
         # Fallback to 120 if terminal width detection fails
         return 120
 

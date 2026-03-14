@@ -49,24 +49,6 @@ def validate_url(url: str) -> Tuple[bool, Optional[str]]:
     if re.search(r'[<>"\'\s]', parsed.netloc):
         return False, "URL contains invalid characters in hostname"
     
-    # Check for localhost/private IPs if needed (optional security check)
-    private_patterns = [
-        r'^localhost$',
-        r'^127\.',
-        r'^10\.',
-        r'^172\.(1[6-9]|2[0-9]|3[0-1])\.',
-        r'^192\.168\.',
-        r'^::1$',
-        r'^fe80:',
-    ]
-    
-    hostname = parsed.netloc.split(':')[0].lower()
-    for pattern in private_patterns:
-        if re.match(pattern, hostname):
-            # This is just a warning, not an error
-            # Allow scanning of local networks for testing
-            pass
-    
     return True, None
 
 

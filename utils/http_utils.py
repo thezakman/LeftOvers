@@ -4,9 +4,8 @@ HTTP client and URL processing utilities for LeftOvers scanner.
 
 import hashlib
 import random
-import re
-import os
 import time
+import threading
 from urllib.parse import urlparse
 from typing import Dict, Optional, Any, Tuple
 from functools import lru_cache
@@ -15,7 +14,6 @@ from collections import OrderedDict
 import requests
 import tldextract
 import urllib3
-from requests.exceptions import RequestException, Timeout, ConnectionError
 from urllib3.exceptions import InsecureRequestWarning
 
 from leftovers.utils.logger import logger
@@ -41,7 +39,7 @@ class LRUCache:
         """
         self.max_size = max_size
         self.cache = OrderedDict()
-        self._lock = __import__('threading').Lock()
+        self._lock = threading.Lock()
 
     def get(self, key: str) -> Optional[Dict[str, Any]]:
         """
@@ -152,7 +150,7 @@ class HttpClient:
         self.rate_limit = rate_limit
         self.delay_ms = delay_ms
         self._last_request_time = 0
-        self._rate_limit_lock = __import__('threading').Lock()
+        self._rate_limit_lock = threading.Lock()
 
         # Calculate minimum delay between requests based on rate_limit
         if rate_limit:

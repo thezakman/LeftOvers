@@ -2,8 +2,10 @@
 Global application settings for LeftOvers tool.
 """
 
+import urllib3
+
 # Version information
-VERSION = "1.4.9"
+VERSION = "1.5.0"
 
 # General settings
 DEBUG = False
@@ -25,7 +27,6 @@ RETRY_ATTEMPTS = 3  # Number of retry attempts for failed requests
 RETRY_BACKOFF = 1.5  # Exponential backoff multiplier for retries
 
 # Disable SSL warnings globally to avoid console clutter
-import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # File handling settings

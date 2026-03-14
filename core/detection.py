@@ -9,27 +9,6 @@ import difflib
 from typing import Dict, Tuple, Any, Set
 import sys
 
-# Use importlib.metadata instead of deprecated pkg_resources
-try:
-    from importlib.metadata import version, PackageNotFoundError
-except ImportError:
-    # Fallback for Python < 3.8
-    try:
-        from importlib_metadata import version, PackageNotFoundError
-    except ImportError:
-        # Create a mock if importlib.metadata is not available
-        def version(package_name):
-            """Mock version function"""
-            versions = {
-                'tldextract': '3.4.0',
-                'requests': '2.31.0',
-                'urllib3': '2.0.4'
-            }
-            return versions.get(package_name, '0.0.0')
-        
-        class PackageNotFoundError(Exception):
-            pass
-
 from leftovers.core.result import ScanResult
 from leftovers.utils.logger import logger
 
@@ -80,7 +59,7 @@ def establish_baseline(http_client: HttpClient, base_url: str, verbose: bool = F
             if content_type and 'text/html' in content_type.lower() and main_response.content:
                 try:
                     main_text = _extract_text_content(main_response.content)
-                except:
+                except Exception:
                     pass
             
             # Store enhanced baseline for main page
@@ -129,7 +108,7 @@ def establish_baseline(http_client: HttpClient, base_url: str, verbose: bool = F
                 if response.headers.get('Content-Type', '').lower().startswith('text/'):
                     try:
                         text_content = _extract_text_content(response.content)
-                    except:
+                    except Exception:
                         pass
                 
                 # Store enhanced baseline by status code
@@ -140,8 +119,7 @@ def establish_baseline(http_client: HttpClient, base_url: str, verbose: bool = F
                 baseline_responses[key].append({
                     "content_hash": content_hash,
                     "content_type": response.headers.get('Content-Type', 'N/A'),
-                    "size": len(response.content) if response.content else 0,  # Use "size" for consistency
-                    "content_length": len(response.content) if response.content else 0,
+                    "size": len(response.content) if response.content else 0,
                     "url": url,
                     "headers": dict(response.headers),
                     "text_content": text_content[:2000],  # First 2000 chars for memory efficiency
@@ -416,7 +394,7 @@ def check_false_positive(
             spa_indicators = _check_spa_fallback(html_content, result.url)
             if spa_indicators:
                 return True, f"Detected SPA fallback: {spa_indicators}"
-        except:
+        except Exception:
             pass
 
     # Check for legitimate leftover/backup patterns
@@ -670,7 +648,7 @@ def _is_likely_leftover_file(result: ScanResult, response_content: bytes) -> boo
 
                 content_indicates_leftover = has_sql_pattern or has_config_pattern or has_log_pattern
 
-            except:
+            except Exception:
                 pass
 
     # 5. Binary files with appropriate content types and sizes

@@ -28,7 +28,6 @@ class ScanMetrics:
     
     # Content metrics
     total_bytes_downloaded: int = 0
-    total_bytes_scanned: int = 0
     
     # Discovery metrics
     files_found: int = 0
@@ -80,7 +79,6 @@ class ScanMetrics:
         
         if bytes_downloaded > 0:
             self.total_bytes_downloaded += bytes_downloaded
-            self.total_bytes_scanned += bytes_downloaded
     
     def record_discovery(self, is_false_positive: bool = False, extension: Optional[str] = None):
         """
@@ -177,7 +175,6 @@ class ScanMetrics:
             },
             'data': {
                 'bytes_downloaded': self.total_bytes_downloaded,
-                'bytes_scanned': self.total_bytes_scanned,
                 'mb_downloaded': round(self.total_bytes_downloaded / (1024 * 1024), 2),
             },
             'discoveries': {

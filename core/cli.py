@@ -146,7 +146,7 @@ def configure_scanner_from_args(args):
     # Show level info
     if not args.silent:
         logger.info(f"Scan level {args.level}: {level_config['description']}")
-        if args.lang != "all" and not args.silent:
+        if args.lang != "all":
             logger.info(f"Language filter: {args.lang}")
     
     extensions = None
@@ -191,8 +191,8 @@ def configure_scanner_from_args(args):
     status_filter = parse_status_codes(args.status) if args.status else None
     
     # Calculate rate limit parameters
-    rate_limit = args.rate_limit if hasattr(args, 'rate_limit') else None
-    delay_ms = args.delay if hasattr(args, 'delay') else None
+    rate_limit = args.rate_limit
+    delay_ms = args.delay
 
     # Initialize scanner
     scanner = LeftOver(
@@ -254,14 +254,8 @@ def configure_scanner_from_args(args):
 
 def handle_interrupt(signum, frame):
     """Handle keyboard interrupt gracefully."""
-    # Verify if the signal is from a keyboard interrupt
-    import sys
-    
-    # check if silent mode is enabled
     silent = '-s' in sys.argv or '--silent' in sys.argv
-    
     if not silent:
-        from leftovers.utils.console import console
         console.print("\n[bold red]Interrupted by user. Cleaning up...[/bold red]")
     sys.exit(0)
 

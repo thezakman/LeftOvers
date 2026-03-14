@@ -1,8 +1,6 @@
 """
 Scanner-specific configurations and constants for the LeftOvers scanner.
-"""
 
-"""
 This module contains all scanner-specific configurations including:
 - File extensions to scan (organized by priority and category)
 - Backup words and directory names
@@ -77,7 +75,6 @@ CONFIG_EXTENSIONS = [
 IDE_LEFTOVER_EXTENSIONS = [
     "swp", "swo", "swn", "tmp~", "tmp.swp", "tmp.save", "sml",
     "autosave", "kate-swp", "bak~", "backup~", ".tmp", ".temp",
-    #".#", "#", "~1", "~2", "~3", "$$$",
 ]
 
 # SOURCE CODE BACKUPS - Code files with backup extensions
@@ -95,10 +92,7 @@ CODE_BACKUP_EXTENSIONS = [
 ]
 
 # VERSION CONTROL LEFTOVERS - Files left by VCS operations
-VCS_LEFTOVER_EXTENSIONS = [
-    #"rej", "patch", "diff", "merge", "orig", "mine", "theirs",
-    #"working", "conflict", "BASE", "LOCAL", "REMOTE",
-]
+VCS_LEFTOVER_EXTENSIONS = []
 
 # SENSITIVE DOCUMENT BACKUPS - Documents that might contain sensitive data
 DOCUMENT_BACKUP_EXTENSIONS = [
