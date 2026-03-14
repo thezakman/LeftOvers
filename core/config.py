@@ -42,7 +42,7 @@ CRITICAL_BACKUP_EXTENSIONS = [
 
 # MEDIUM PRIORITY - Configuration and log files
 CONFIG_LOG_EXTENSIONS = [
-    "txt", "log", "log1", "properties", "plist", "settings", "lock",
+    "txt", "log", "log1", "settings", "lock",
     "csv", "pid", "out", "err", "debug", "trace", "cache",
 ]
 
@@ -87,12 +87,20 @@ CODE_BACKUP_EXTENSIONS = [
     "rb.bak", "rb.old", "rb.save", "rb~", "rb.orig",
     "sh.bak", "sh.old", "sh.save", "sh~", "sh.orig",
     "js.bak", "js.old", "js.save", "js~", "js.orig",
+    "ts.bak", "ts.old", "ts.save", "ts~", "ts.orig",
     "css.bak", "css.old", "css.save", "css~", "css.orig",
     "html.bak", "html.old", "html.save", "html~", "html.orig",
+    "go.bak", "go.old", "go.save", "go~", "go.orig",
+    "java.bak", "java.old", "java.save", "java~", "java.orig",
+    "cs.bak", "cs.old", "cs.save", "cs~", "cs.orig",
+    "vue.bak", "vue.old", "vue~", "vue.orig",
 ]
 
 # VERSION CONTROL LEFTOVERS - Files left by VCS operations
-VCS_LEFTOVER_EXTENSIONS = []
+VCS_LEFTOVER_EXTENSIONS = [
+    "rej", "patch", "diff", "merge", "mine", "theirs",
+    "working", "conflict",
+]
 
 # SENSITIVE DOCUMENT BACKUPS - Documents that might contain sensitive data
 DOCUMENT_BACKUP_EXTENSIONS = [
@@ -107,6 +115,7 @@ SECURITY_EXTENSIONS = [
     "htpasswd", "passwd", "shadow", "pwd", "secret", "credentials",
     "token", "auth", "oauth", "session", "cookie", "api_key",
     "private", "public", "rsa", "dsa", "ssh", "gpg", "pgp",
+    "ppk", "p7b", "der", "cer", "pub", "ed25519", "asc", "sig",
 ]
 
 # ENVIRONMENT AND BUILD FILES - Configuration and build artifacts
@@ -127,12 +136,17 @@ EXTRAS_EXTENSIONS = [
 CRITICAL_SPECIFIC_FILES = [
     # Certificates and keys (HIGHEST PRIORITY)
     "certificate.pfx", "private.key", "ca_bundle.crt",
+    # SSH private keys
+    "id_rsa", "id_rsa.pub", "id_ed25519", "id_ed25519.pub", "id_dsa",
     # Environment files
-    ".env", ".environment", ".envrc", ".envs",
+    ".env", ".env.local", ".env.backup", ".env.prod", ".env.dev",
+    ".environment", ".envrc", ".envs",
     # Access tokens
     "accesstoken", "accesstokens.json",
     # Web configuration
     ".htaccess", "web.config", "web.debug.config",
+    # PHP config (very common exposure)
+    "wp-config.php", "config.php", "phpinfo.php", "info.php",
 ]
 
 SPECIFIC_FILES = [
@@ -140,8 +154,19 @@ SPECIFIC_FILES = [
     "webserver-plugin.xml", "webserver.ini",
     # API documentation
     "swagger-ui", "redoc",
+    # Container & CI/CD
+    "Dockerfile", "docker-compose.yml", "docker-compose.yaml",
+    "docker-compose.dev.yml", "docker-compose.prod.yml",
+    "Jenkinsfile", ".travis.yml", "Makefile", "Vagrantfile", "Procfile",
     # Build and deployment
     ".dockerignore", ".npmrc",
+    # Dependency manifests (often contain version info / indirect secrets)
+    "package.json", "composer.json", "requirements.txt",
+    "Gemfile", "go.mod", "pom.xml", "build.gradle",
+    # App config files (common leak points)
+    "application.properties", "application.yml", "application.yaml",
+    "database.yml", "database.json", "secrets.yml",
+    "bootstrap.yml", "config.yml",
     # Environment config
     "env-config.js", "env.js", "environment.js", "environment.json", "environment.ts",
     # Other files
@@ -152,8 +177,10 @@ SPECIFIC_FILES = [
 
 # VCS AND GIT FILES - Version control specific files
 VCS_SPECIFIC_FILES = [
-    ".git/config", ".svn/entries", ".git", ".gitignore", ".gitattributes",
-    ".gitmodules", ".hgignore", ".hgsub", ".hgsubstate",
+    ".git/config", ".git/HEAD", ".git/FETCH_HEAD", ".git/index",
+    ".svn/entries", ".svn/wc.db",
+    ".git", ".gitignore", ".gitattributes", ".gitmodules",
+    ".hgignore", ".hgsub", ".hgsubstate",
 ]
 
 # Create the final DEFAULT_EXTENSIONS list from all categories
@@ -179,14 +206,16 @@ DEFAULT_FILES_WORDS = [
 ]
 
 BACKUP_DIRECTORY_WORDS = [
-    "anterior", "antigo", "archive", "archived", "archives", "atual", "back",
-    "backup", "bkp", "copy", "copia", "current", "deletar", "delete", "dev",
-    "devel", "development", "draft", "guardar", "historical", "history", "hml",
-    "homolog", "homologacao", "homologation", "latest", "lixo", "log", "logs",
-    "new", "novo", "old", "old_version", "orig", "original", "prd", "prod",
-    "producao", "production", "rascunho", "release", "reserva", "salvo", "save",
-    "saved", "security", "seguranca", "stable", "staging", "temp", "temporario",
-    "temporary", "tmp", "trash", "version", "versao"
+    "alpha", "anterior", "antigo", "archive", "archived", "archives", "atual",
+    "back", "backup", "beta", "bkp", "copy", "copia", "current",
+    "deletar", "delete", "deprecated", "dev", "devel", "development",
+    "draft", "fix", "guardar", "historical", "history", "hml", "hotfix",
+    "homolog", "homologacao", "homologation", "latest", "legacy", "legado",
+    "lixo", "log", "logs", "new", "novo", "obsoleto", "old", "old_version",
+    "orig", "original", "patch", "prd", "prod", "producao", "production",
+    "rascunho", "rc", "release", "reserva", "salvo", "save", "saved",
+    "security", "seguranca", "stable", "staging", "temp", "temporario",
+    "temporary", "tmp", "trash", "version", "versao",
 ]
 
 WEB_RELATED_WORDS = [
@@ -203,14 +232,16 @@ VERSION_CONTROL_WORDS = [
 ]
 
 DATE_VERSION_WORDS = [
-    "1", "2", "1.0", "2.0", "200", "2001", "2006", "2007", "2008", "2009", 
-    "2013", "2014", "2019", "2020", "2021", "2022", "2023", "2024", "2025", "2026",
-    "abr", "abril", "ago", "agosto", "apr", "april", "aug", "august", 
-    "dec", "december", "dez", "dezembro", "feb", "february", "fev", "fevereiro", 
-    "jan", "janeiro", "jul", "july", "jun", "junho", "june", "mai", "maio", 
-    "mar", "march", "marco", "may", "nov", "november", "novembro", 
-    "oct", "october", "out", "outubro", "sep", "september", "set", "setembro", 
-    "v1", "v2", "v3"
+    "1", "2", "1.0", "2.0",
+    "2001", "2002", "2003", "2004", "2005", "2006", "2007", "2008", "2009",
+    "2010", "2011", "2012", "2013", "2014", "2015", "2016", "2017", "2018",
+    "2019", "2020", "2021", "2022", "2023", "2024", "2025", "2026",
+    "abr", "abril", "ago", "agosto", "apr", "april", "aug", "august",
+    "dec", "december", "dez", "dezembro", "feb", "february", "fev", "fevereiro",
+    "jan", "janeiro", "jul", "july", "jun", "junho", "june", "mai", "maio",
+    "mar", "march", "marco", "may", "nov", "november", "novembro",
+    "oct", "october", "out", "outubro", "sep", "september", "set", "setembro",
+    "v1", "v2", "v3", "v4", "v5",
 ]
 
 PTBR_COMMON_WORDS = [
@@ -218,7 +249,7 @@ PTBR_COMMON_WORDS = [
     "dados", "desenvolvedor", "documentacao", "emergencia", "importante",
     "informacao", "interno", "manutencao", "pendente", "privado", "projeto",
     "recuperacao", "restrito", "revisado", "secreto", "segredo", "senha",
-    "servico", "servidor", "suporte", "teste", "usuario", "webservice", "webservices"
+    "servico", "servidor", "suporte", "teste", "usuario", "webservices",
 ]
 
 EN_COMMON_WORDS = [
@@ -234,7 +265,7 @@ EN_COMMON_WORDS = [
     "guidelines", "guides", "help", "hidden", "hiring", "id", "important", "import",
     "income", "information", "input", "install", "institutional", "internal",
     "inventory", "intranet", "loss", "mail", "maintenance", "management", "manual",
-    "manuals", "memo", "message", "ministry", "model", "network", "nfe", "nfse",
+    "manuals", "memo", "message", "ministry", "model", "network",
     "norm", "normative", "norms", "note", "notice", "organization", "ordinance",
     "output", "password", "payable", "payment", "pending", "planning", "policy",
     "prefecture", "private", "printing", "printer", "process", "product", "program",
@@ -245,6 +276,7 @@ EN_COMMON_WORDS = [
     "secret", "secretary", "sent", "server", "service", "settings", "setup",
     "society", "statement", "strategy", "strategic", "supplier", "support", "tax",
     "test", "token", "transaction", "unit", "upload", "uploads", "user", "vpn", "wap",
+    "api", "dashboard", "panel", "login", "cms",
 ]
 
 PTBR_BUSINESS_WORDS = [
@@ -285,9 +317,14 @@ PTBR_TECHNICAL_WORDS = [
 ]
 
 DATABASE_CONFIG_WORDS = [
-    "conf", "config", "data", "database", "db", "dist", "dump", "exportacao",
-    "hidden", "importacao", "install", "internal", "padrao", "private",
-    "settings", "setup", "modelos", "modelo", "sql", "structure", "tmp", "temp", 
+    # Unique PT-BR database terms (not in other lists)
+    "exportacao", "importacao", "padrao",
+    # Unique terms
+    "sql", "structure",
+    # Database technology names (not covered by generic lists)
+    "redis", "mongo", "mongodb", "postgres", "postgresql", "mysql",
+    "oracle", "mssql", "mariadb", "sqlite", "cassandra", "elasticsearch",
+    "memcached", "dynamodb", "couchdb", "influxdb", "neo4j", "etcd",
 ]
 
 # Create the final DEFAULT_BACKUP_WORDS list from all categories
