@@ -5,7 +5,6 @@ Logging configuration for the LeftOvers scanner.
 import logging
 import sys
 import os
-from datetime import datetime
 from typing import Optional, Dict, Any
 from logging.handlers import RotatingFileHandler
 

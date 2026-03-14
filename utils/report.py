@@ -10,50 +10,7 @@ from rich import box
 from leftovers.core.result import ScanResult
 from leftovers.utils.logger import logger
 from leftovers.utils.file_utils import format_size
-
-def group_results_by_status(results: List[ScanResult]) -> Dict[int, Dict[str, int]]:
-    """Group results by status code and count false positives."""
-    status_counts = {}
-    fp_counts = 0
-    
-    for result in results:
-        key = result.status_code
-        if key not in status_counts:
-            status_counts[key] = {"total": 0, "false_positive": 0}
-                
-        status_counts[key]["total"] += 1
-        if result.false_positive:
-            status_counts[key]["false_positive"] += 1
-            fp_counts += 1
-    
-    return status_counts, fp_counts
-
-def filter_interesting_results(results: List[ScanResult]) -> List[ScanResult]:
-    """Filter interesting results (not 404 and not false positives, except 200s)."""
-    # Optimized version using a single list comprehension
-    return [
-        r for r in results 
-        if (r.status_code != 404 and (not r.false_positive or r.status_code == 200))
-    ]
-
-def find_duplicate_content(results: List[ScanResult]) -> tuple:
-    """Find duplicate content by grouping by content hash."""
-    grouped_by_hash = {}
-    for result in results:
-        if result.content_hash:
-            if result.content_hash not in grouped_by_hash:
-                grouped_by_hash[result.content_hash] = []
-            grouped_by_hash[result.content_hash].append(result)
-    
-    # Find potential duplicates (same content hash)
-    duplicate_sets = [results for hash_val, results in grouped_by_hash.items() if len(results) > 1]
-    
-    # Calculate total duplicates
-    total_duplicates = 0
-    if duplicate_sets:
-        total_duplicates = sum(len(dupe_set) for dupe_set in duplicate_sets) - len(duplicate_sets)
-        
-    return duplicate_sets, total_duplicates
+from leftovers.app_settings import SUCCESS_STATUSES
 
 def generate_summary_report(results: List[ScanResult], console: Console, use_color: bool = True, verbose: bool = False):
     """
@@ -115,7 +72,7 @@ def generate_summary_report(results: List[ScanResult], console: Console, use_col
     ]
     
     # Detect duplicates using the content_hashes we computed earlier
-    duplicate_sets = [results for hash_val, results in content_hashes.items() if len(results) > 1]
+    duplicate_sets = [group for group in content_hashes.values() if len(group) > 1]
     total_duplicates = sum(len(dupe_set) - 1 for dupe_set in duplicate_sets) if duplicate_sets else 0
     
     # Log debug information
@@ -292,15 +249,13 @@ def _is_interesting_content_type(content_type: str) -> bool:
 def _get_status_style(status_code: int) -> str:
     """
     Get the appropriate color style for a status code.
-    
+
     Args:
         status_code: HTTP status code
-        
+
     Returns:
         String with Rich color style name
     """
-    from leftovers.app_settings import SUCCESS_STATUSES
-    
     if status_code in SUCCESS_STATUSES:  # 200 OK, 206 Partial Content
         return "bold green"  # Use bold for emphasis on successful responses
     elif status_code == 403:  # Forbidden

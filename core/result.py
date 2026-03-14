@@ -2,7 +2,7 @@
 Classes for storing and processing scan results.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Dict, Any, Optional, List
 
@@ -21,9 +21,9 @@ class ScanResult:
     content_hash: str = ""
     false_positive: bool = False
     false_positive_reason: str = ""
-    large_file: bool = False  # New flag for large files
-    partial_content: bool = False  # New flag for partial content
-    timestamp: datetime = datetime.now()
+    large_file: bool = False
+    partial_content: bool = False
+    timestamp: datetime = field(default_factory=datetime.now)
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert object to dictionary for export."""

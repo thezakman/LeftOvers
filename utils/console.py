@@ -4,7 +4,9 @@ Console utilities for LeftOvers. Handles pretty output and formatting.
 
 # Fix for macOS permission issues with os.getcwd() in rich module
 import os
+import re
 import sys
+import shutil
 
 # Patch os.getcwd to avoid permission issues in macOS
 original_getcwd = os.getcwd
@@ -34,8 +36,6 @@ from leftovers.utils.file_utils import format_size
 def get_terminal_width():
     """Get the terminal width, with fallback if detection fails."""
     try:
-        # Try to get terminal size
-        import shutil
         width, _ = shutil.get_terminal_size()
         # Use actual terminal width, but ensure minimum width for readability
         # Only enforce minimum if the terminal is really narrow (less than 80)
@@ -368,7 +368,6 @@ def format_and_print_result(console, result, use_color=True, verbose=False, sile
                 compact_details += " [cyan][206][/cyan]"
 
             # Now check if this compact version fits
-            import re
             compact_plain = re.sub(r'\[/?[a-z ]+\]', '', compact_details)
             compact_width = len(compact_plain)
 

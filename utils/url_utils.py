@@ -235,10 +235,8 @@ def _generate_base_tests(add_test, scheme, full_hostname, path_label, path_segme
             if '.' not in segment:  # Don't test files
                 test_url = f"{scheme}://{full_hostname}/{segment}"
                 add_test(test_url, f"Segment {i+1}")
-    else:
-        # If no path, skip base URL tests as they rarely yield useful results
-        # (testing /txt, /log etc. without context is not productive)
-        pass
+    # If no path, skip base URL tests as they rarely yield useful results
+    # (testing /txt, /log etc. without context is not productive)
 
 def _generate_domain_tests(add_test, scheme, full_hostname, subdomain, domain, suffix):
     """Generate tests based on domain components."""
@@ -268,7 +266,6 @@ def _generate_domain_tests(add_test, scheme, full_hostname, subdomain, domain, s
 def _generate_subdomain_permutation_tests(add_test, scheme, full_hostname, subdomain):
     """Generate detailed permutation tests for composite subdomains."""
     # Split by all separators to get all parts
-    import re
     all_parts = re.split(r'[._-]', subdomain)
     all_parts = [part for part in all_parts if part]  # Remove empty parts
 
@@ -535,24 +532,9 @@ def _generate_brute_force_tests(add_test, scheme, full_hostname, path_label, pat
             words_without_extensions.append(word)
     
     # Normal brute force (only at the leaf directory)
-    if path_label:
-        # For words that already have extensions, add them directly
-        for word in words_with_extensions:
-            test_url = f"{scheme}://{full_hostname}/{path_label}/{word}"
-            add_test(test_url, f"Brute Force: {word}")
-        # For words without extensions, they will be processed normally by the scanner
-        for word in words_without_extensions:
-            test_url = f"{scheme}://{full_hostname}/{path_label}/{word}"
-            add_test(test_url, f"Brute Force: {word}")
-    else:
-        # For words that already have extensions, add them directly
-        for word in words_with_extensions:
-            test_url = f"{scheme}://{full_hostname}/{word}"
-            add_test(test_url, f"Brute Force: {word}")
-        # For words without extensions, they will be processed normally by the scanner
-        for word in words_without_extensions:
-            test_url = f"{scheme}://{full_hostname}/{word}"
-            add_test(test_url, f"Brute Force: {word}")
+    base = f"{scheme}://{full_hostname}/{path_label}" if path_label else f"{scheme}://{full_hostname}"
+    for word in words_with_extensions + words_without_extensions:
+        add_test(f"{base}/{word}", f"Brute Force: {word}")
 
     # Recursive brute force (test each level of the path)
     if brute_recursive and path_segments:
@@ -571,14 +553,8 @@ def _generate_brute_force_tests(add_test, scheme, full_hostname, path_label, pat
         
         # For each path level, run brute force tests
         for level in path_levels:
-            # For words that already have extensions, add them directly
-            for word in words_with_extensions:
-                test_url = f"{level}/{word}"
-                add_test(test_url, f"Brute Force Recursive: {word}")
-            # For words without extensions, they will be processed normally by the scanner
-            for word in words_without_extensions:
-                test_url = f"{level}/{word}"
-                add_test(test_url, f"Brute Force Recursive: {word}")
+            for word in words_with_extensions + words_without_extensions:
+                add_test(f"{level}/{word}", f"Brute Force Recursive: {word}")
 
 def _log_path_segments(path):
     """Log detailed information about path segments for debugging."""

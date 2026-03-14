@@ -8,7 +8,6 @@ from typing import Dict, Any, Optional, Union
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-from urllib3.exceptions import InsecureRequestWarning
 
 from leftovers.app_settings import DEFAULT_TIMEOUT, USER_AGENTS, MAX_FILE_SIZE_MB
 from leftovers.utils.logger import logger
@@ -36,11 +35,6 @@ class MemoryEfficientHttpHandler:
         self.rotate_user_agent = rotate_user_agent
         self.verbose = verbose
         self.session = None
-        self.is_session_created = False
-        
-        # Suppress only the single InsecureRequestWarning
-        if not verify_ssl:
-            requests.packages.urllib3.disable_warnings(category=InsecureRequestWarning)
     
     def _get_session(self) -> requests.Session:
         """
@@ -68,8 +62,6 @@ class MemoryEfficientHttpHandler:
             
             # Set default headers
             self.session.headers.update(self.headers)
-            
-            self.is_session_created = True
             
         return self.session
     
@@ -264,4 +256,3 @@ class MemoryEfficientHttpHandler:
         if self.session:
             self.session.close()
             self.session = None
-            self.is_session_created = False
