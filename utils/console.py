@@ -26,8 +26,8 @@ from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
 from rich.progress import (
-    Progress, SpinnerColumn, TextColumn, BarColumn, 
-    TaskProgressColumn, TimeElapsedColumn, TimeRemainingColumn
+    Progress, SpinnerColumn, TextColumn, BarColumn,
+    MofNCompleteColumn, TaskProgressColumn, TimeElapsedColumn, TimeRemainingColumn,
 )
 from rich import box
  
@@ -462,14 +462,16 @@ def print_url_list_progress(current: int, total: int, url: str, use_color: bool 
 def create_url_list_progress(total: int, use_color: bool = True):
     """Create a progress bar for URL list processing."""
     progress = Progress(
+        SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TaskProgressColumn(),
+        BarColumn(bar_width=28),
+        MofNCompleteColumn(),
         TextColumn("•"),
         TimeElapsedColumn(),
         TextColumn("•"),
         TimeRemainingColumn(),
-        console=console if use_color else None
+        console=console if use_color else None,
+        transient=False,
     )
-    task_id = progress.add_task("[cyan]Processing URLs...", total=total)
+    task_id = progress.add_task("[cyan]Starting…", total=total)
     return progress, task_id

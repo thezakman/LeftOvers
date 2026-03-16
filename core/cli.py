@@ -60,7 +60,8 @@ def parse_arguments():
     
     # Configuration options
     parser.add_argument("-to", "--timeout", type=int, default=DEFAULT_TIMEOUT, help="Timeout in seconds for each request")
-    parser.add_argument("-t", "--threads", type=int, default=DEFAULT_THREADS, help="Number of parallel threads")
+    parser.add_argument("-t", "--threads", type=int, default=DEFAULT_THREADS, help="Number of parallel threads for extension testing per URL")
+    parser.add_argument("--workers", type=int, default=None, metavar="N", help="URLs to scan concurrently when using -l/--list (default: same as -t)")
     parser.add_argument("-a", "--user-agent", help="Custom User-Agent")
     parser.add_argument("-ra", "--rotate-agents", action="store_true", help="Randomly rotate User-Agents")
     parser.add_argument("-H", "--header", action="append", help="Custom header in format 'Name: Value' (can be used multiple times)")
@@ -215,7 +216,11 @@ def configure_scanner_from_args(args):
         rate_limit=rate_limit,
         delay_ms=delay_ms
     )
-            
+
+    # URL-level concurrency for -l/--list mode
+    if args.workers is not None:
+        scanner.url_workers = args.workers
+
     # Add brute force capability if requested, including fast-scan mode
     if args.brute or args.brute_recursive or args.domain_wordlist or args.fast_scan:
         # If brute mode is enabled, use full word list (override level for brute)

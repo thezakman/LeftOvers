@@ -72,26 +72,23 @@ class LeftOver:
         self.verbose = verbose
         self.silent = silent
         self.output_file = output_file
+        self.output_per_url = False
         self.results = []
         self.rotate_user_agent = rotate_user_agent
         self.test_index = test_index
         self.disable_fp = disable_fp
-        
+
         # Brute force settings (default empty, set by CLI)
         self.brute_mode = False
         self.brute_recursive = False
         self.domain_wordlist = False
         self.backup_words = []
-        
+
         # Filters
         self.status_filter = status_filter
         self.min_content_length = min_content_length
         self.max_content_length = max_content_length
         self.ignore_content = ignore_content or []
-        
-        # Output settings
-        self.output_file = output_file
-        self.output_per_url = False  # New option
         
         # Set logging level based on verbose and silent flags
         global logger
@@ -115,10 +112,14 @@ class LeftOver:
         self._main_page = None
 
         # Thread-safe locks for shared dictionaries (prevent race conditions)
+        self._stats_lock = threading.Lock()
+        self._tested_urls_lock = threading.Lock()
         self._size_frequency_lock = threading.Lock()
         self._hash_frequency_lock = threading.Lock()
         self._found_urls_lock = threading.Lock()
         self._results_lock = threading.Lock()
+        # Per-thread baseline data so concurrent URL workers don't overwrite each other
+        self._thread_local = threading.local()
         
         # Performance metrics tracking
         self.metrics = ScanMetrics()
@@ -242,6 +243,13 @@ class LeftOver:
         with self._found_urls_lock:
             self.found_urls.add(url)
 
+    def _inc_stats(self, requests: int = 0, req_time: float = 0.0, hits: int = 0) -> None:
+        """Thread-safe increment of scan statistics."""
+        with self._stats_lock:
+            self.stats['requests'] += requests
+            self.stats['total_time'] += req_time
+            self.stats['hits'] += hits
+
     def _thread_safe_check_false_positive(
             self,
             result: ScanResult,
@@ -256,13 +264,16 @@ class LeftOver:
         Returns:
             Tuple of (is_false_positive, reason)
         """
-        # Use locks to protect shared dictionaries during false positive check
+        # Use per-thread baseline when available (set by _process_url_without_progress)
+        # so concurrent list-mode workers don't read each other's baselines.
+        main_page = getattr(self._thread_local, 'main_page', self._main_page)
+        baseline_responses = getattr(self._thread_local, 'baseline_responses', self.baseline_responses)
         with self._size_frequency_lock, self._hash_frequency_lock:
             return check_false_positive(
                 result,
                 response_content,
-                self.baseline_responses,
-                self._main_page,
+                baseline_responses,
+                main_page,
                 self._size_frequency,
                 self._hash_frequency
             )
@@ -304,23 +315,18 @@ class LeftOver:
             if len(path_parts) > 3:  # scheme://domain/path
                 path_test_url = f"{'/'.join(path_parts[:-1])}/{path_parts[-1]}.{extension}"
         
-        # Check if these URLs have already been tested to avoid duplication
+        # Atomically check-and-claim URLs to avoid duplicate testing across threads
         urls_to_test = []
-        
-        # First check exact match if it exists
-        if exact_match_url and exact_match_url not in self.tested_urls:
-            self.tested_urls.add(exact_match_url)
-            urls_to_test.append(exact_match_url)
-            
-        # Then check standard full URL if not already tested
-        if full_url not in self.tested_urls:
-            self.tested_urls.add(full_url)
-            urls_to_test.append(full_url)
-            
-        # Finally check path-based URL if not already tested
-        if path_test_url and path_test_url not in self.tested_urls:
-            self.tested_urls.add(path_test_url)
-            urls_to_test.append(path_test_url)
+        with self._tested_urls_lock:
+            if exact_match_url and exact_match_url not in self.tested_urls:
+                self.tested_urls.add(exact_match_url)
+                urls_to_test.append(exact_match_url)
+            if full_url not in self.tested_urls:
+                self.tested_urls.add(full_url)
+                urls_to_test.append(full_url)
+            if path_test_url and path_test_url not in self.tested_urls:
+                self.tested_urls.add(path_test_url)
+                urls_to_test.append(path_test_url)
         
         # Test all URLs in order (prioritizing exact match)
         for url_to_test in urls_to_test:
@@ -338,11 +344,10 @@ class LeftOver:
             
             # Perform the HTTP request
             result = self.http_client.get(full_url)
-            self.stats['requests'] += 1
-            
+
             # Calculate request time
             req_time = time.time() - start_time
-            self.stats['total_time'] += req_time
+            self._inc_stats(requests=1, req_time=req_time)
 
             # Track latency for adaptive threading
             self._track_request_latency(req_time)
@@ -417,32 +422,20 @@ class LeftOver:
             # Special handling for successful status codes (200, 206)
             # These are important but we still need to respect false positive detection
             if status_code in SUCCESS_STATUSES:
-                # Only bypass false positive detection if explicitly disabled
                 if self.disable_fp or not is_false_positive:
-                    self.stats['hits'] += 1
+                    self._inc_stats(hits=1)
                     self._thread_safe_add_found_url(scan_result.url)
                     self._thread_safe_add_result(scan_result)
                     return scan_result
-                else:
-                    # Even success codes can be false positives (like SPA fallbacks, error images)
-                    # Don't show these results - return None to filter them out
-                    return None
-            
-            # If disable_fp is enabled, report regardless of false positive classification
-            if self.disable_fp:
-                # We still keep the classification for informational purposes
-                self.stats['hits'] += 1
+                return None
+
+            # Non-success status codes
+            if self.disable_fp or not is_false_positive:
+                self._inc_stats(hits=1)
                 self._thread_safe_add_found_url(scan_result.url)
                 self._thread_safe_add_result(scan_result)
                 return scan_result
 
-            # If false positive detection is not disabled, only report if not FP
-            if not is_false_positive:
-                self.stats['hits'] += 1
-                self._thread_safe_add_found_url(scan_result.url)
-                self._thread_safe_add_result(scan_result)
-                return scan_result
-                
             return None
             
         except Exception as e:
@@ -452,7 +445,7 @@ class LeftOver:
                 logger.debug(f"Error testing URL {full_url}: {error_type}: {str(e)}")
             return None
     
-    def _perform_important_extension_tests(self, target_url: str, optimized_extensions: List[str]) -> bool:
+    def _perform_important_extension_tests(self, target_url: str, optimized_extensions: List[str], suppress_print: bool = False) -> bool:
         """
         Perform direct tests for important file extensions (PDF, Office docs, archives).
 
@@ -483,25 +476,23 @@ class LeftOver:
                 logger.debug(f"HIGH PRIORITY: Testing direct URL for important file: {direct_url}")
 
             try:
-                start_time = time.time()
-
                 import requests
-                special_session = requests.Session()
-                special_session.verify = False
+                start_time = time.time()
 
                 headers = self.http_client.session.headers.copy()
                 headers['Range'] = 'bytes=0-8191'
 
-                response = special_session.get(
-                    direct_url,
-                    headers=headers,
-                    timeout=self.timeout,
-                    allow_redirects=True
-                )
+                with requests.Session() as special_session:
+                    special_session.verify = False
+                    response = special_session.get(
+                        direct_url,
+                        headers=headers,
+                        timeout=self.timeout,
+                        allow_redirects=True
+                    )
 
                 req_time = time.time() - start_time
-                self.stats['requests'] += 1
-                self.stats['total_time'] += req_time
+                self._inc_stats(requests=1, req_time=req_time)
 
                 if response.status_code in [200, 206]:
                     content_type = response.headers.get('Content-Type', 'Unknown')
@@ -538,13 +529,12 @@ class LeftOver:
                     scan_result.false_positive_reason = reason
 
                     if self.disable_fp or not is_false_positive:
-                        self.stats['hits'] += 1
+                        self._inc_stats(hits=1)
                         self._thread_safe_add_found_url(direct_url)
                         self._thread_safe_add_result(scan_result)
                         found_files = True
-                        
-                        # Only print if not a false positive (or FP detection is disabled)
-                        if not self.silent:
+
+                        if not self.silent and not suppress_print:
                             format_and_print_result(console, scan_result, self.use_color, self.verbose, self.silent)
 
             except Exception as e:
@@ -554,7 +544,7 @@ class LeftOver:
 
         return found_files
 
-    def _perform_direct_extension_tests(self, target_url: str, optimized_extensions: List[str]) -> bool:
+    def _perform_direct_extension_tests(self, target_url: str, optimized_extensions: List[str], suppress_print: bool = False) -> bool:
         """
         Perform direct tests for non-important extensions.
 
@@ -590,10 +580,8 @@ class LeftOver:
             try:
                 start_time = time.time()
                 result = self.http_client.get(direct_url)
-                self.stats['requests'] += 1
-
                 req_time = time.time() - start_time
-                self.stats['total_time'] += req_time
+                self._inc_stats(requests=1, req_time=req_time)
 
                 if result["success"]:
                     response = result["response"]
@@ -638,13 +626,12 @@ class LeftOver:
                         scan_result.false_positive_reason = reason
 
                         if self.disable_fp or not is_false_positive:
-                            self.stats['hits'] += 1
+                            self._inc_stats(hits=1)
                             self._thread_safe_add_found_url(direct_url)
                             self._thread_safe_add_result(scan_result)
                             found_files = True
-                            
-                            # Only print if not a false positive (or FP detection is disabled)
-                            if not self.silent:
+
+                            if not self.silent and not suppress_print:
                                 format_and_print_result(console, scan_result, self.use_color, self.verbose, self.silent)
 
             except Exception as e:
@@ -814,7 +801,7 @@ class LeftOver:
     
     def _display_test_type_header(self, test_type: str, example_url: str):
         """Display header for the current test type - optimized format."""
-        if self.silent:
+        if self.silent or not self.verbose:
             return
             
         # Optimization: use precompiled regular expressions for extraction
@@ -1065,120 +1052,208 @@ class LeftOver:
         return base_url
     
     def process_url_list(self, url_list_file: str):
-        """Process multiple URLs from a file - optimized version."""
+        """Process multiple URLs from a file with URL-level parallelism.
+
+        --workers  controls how many URLs scan at the same time (default = -t).
+        -t/--threads controls the inner extension-testing pool per URL.
+
+        A fixed-size task-pool is pre-allocated so the Rich live display never
+        grows after it starts, preventing the progress block from "jumping down".
+        """
+        import queue as _queue
+        from rich.progress import (
+            Progress, SpinnerColumn, TextColumn, BarColumn,
+            MofNCompleteColumn, TimeElapsedColumn, TimeRemainingColumn,
+        )
+
         urls = load_url_list(url_list_file)
         if not urls:
             return
-        
+
         total_urls = len(urls)
-        
-        # Display initial information (even in silent mode)
+
         if self.use_color:
             console.print(f"[bold cyan]Processing {total_urls} URLs from list: {url_list_file}[/bold cyan]")
         else:
             print(f"Processing {total_urls} URLs from list: {url_list_file}")
-        
-        # Use a single progress bar for all URLs
-        progress, task_id = create_url_list_progress(total_urls, self.use_color)
-        
-        # Global statistics
+
         global_start_time = time.time()
         total_requests = 0
         total_hits = 0
-        
+        done_count = 0
+        stats_lock = threading.Lock()
+
+        # --workers sets URL-level concurrency; fall back to -t if not set.
+        # output_per_url needs serialised self.results → force sequential.
+        if self.output_per_url:
+            n_url_workers = 1
+        else:
+            n_url_workers = min(
+                getattr(self, 'url_workers', None) or self.max_workers,
+                total_urls,
+            )
+            n_url_workers = max(1, n_url_workers)
+
+        progress = Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(bar_width=28),
+            MofNCompleteColumn(),
+            TextColumn("•"),
+            TimeElapsedColumn(),
+            TextColumn("•"),
+            TimeRemainingColumn(),
+            console=console if self.use_color else None,
+            transient=False,
+        )
+
+        # Summary row — always first, never hidden
+        summary_task = progress.add_task(
+            f"[bold cyan]0/{total_urls} URLs • 0 hits",
+            total=total_urls,
+        )
+
+        # Pre-allocate exactly n_url_workers task slots so the display height
+        # is fixed from the moment `with progress:` starts.  Workers claim and
+        # release slots via the task_pool queue; no add_task calls after this.
+        task_pool: "_queue.Queue[int]" = _queue.Queue()
+        for _ in range(n_url_workers):
+            tid = progress.add_task("", total=None, visible=False)
+            task_pool.put(tid)
+
+        def _scan_one(idx: int, url: str):
+            nonlocal total_requests, total_hits, done_count
+
+            # Claim a slot — blocks only if all workers are busy (never deadlocks
+            # because the pool has exactly n_url_workers slots and the executor
+            # runs at most n_url_workers threads concurrently).
+            url_task = task_pool.get()
+            progress.update(url_task, description=f"[cyan]{url}", completed=0, total=None, visible=True)
+
+            if self.output_per_url:
+                with stats_lock:
+                    self.results = []
+
+            url_stats = self._process_url_without_progress(
+                url,
+                shared_progress=progress,
+                url_task_id=url_task,
+            )
+
+            if self.output_per_url and self.output_file:
+                self._export_url_results(url)
+
+            # Hide slot and return it to the pool for the next URL
+            progress.update(url_task, visible=False)
+            task_pool.put(url_task)
+
+            with stats_lock:
+                total_requests += url_stats.get('requests', 0)
+                total_hits += url_stats.get('hits', 0)
+                done_count += 1
+                progress.update(
+                    summary_task,
+                    advance=1,
+                    description=f"[bold cyan]{done_count}/{total_urls} URLs • {total_hits} hits",
+                )
+
         with progress:
-            # Process URLs in batches for better memory performance
-            batch_size = 5  # Ideal number for batch processing
-            for i in range(0, total_urls, batch_size):
-                batch = urls[i:i+batch_size]
-                
-                for j, url in enumerate(batch, 1):
-                    current_index = i + j
-                    # Update progress bar description with the current URL
-                    progress.update(task_id, description=f"[cyan]URL {current_index}/{total_urls}: {url}")
-                    
-                    # Clear previous results if we are generating a file per URL
-                    if self.output_per_url:
-                        self.results = []
-                    
-                    # Process the current URL (with display disabled to avoid conflict)
-                    self._process_url_without_progress(url)
-                    
-                    # Export results for this specific URL, if necessary
-                    if self.output_per_url and self.output_file:
-                        self._export_url_results(url)
-                    
-                    # Accumulate statistics
-                    total_requests += self.stats['requests']
-                    total_hits += self.stats['hits']
-                    
-                    # Advance the progress bar
-                    progress.update(task_id, advance=1)
-        
-        # Display final statistics
-        global_end_time = time.time()
-        global_elapsed = global_end_time - global_start_time
-        
+            with concurrent.futures.ThreadPoolExecutor(max_workers=n_url_workers) as executor:
+                futures = {
+                    executor.submit(_scan_one, i + 1, url): url
+                    for i, url in enumerate(urls)
+                }
+                for future in concurrent.futures.as_completed(futures):
+                    try:
+                        future.result()
+                    except Exception as exc:
+                        url = futures[future]
+                        if not self.silent:
+                            console.print(f"[red]Error processing {url}: {exc}[/red]")
+
+        global_elapsed = time.time() - global_start_time
+
+        # Print all accumulated hits now that the progress display is done.
+        if not self.silent and self.results:
+            if self.use_color:
+                console.print()
+                console.rule("[bold green]Findings[/bold green]", style="green")
+            else:
+                print("\n--- Findings ---")
+            for result in self.results:
+                format_and_print_result(console, result, self.use_color, self.verbose, self.silent)
+
         if not self.silent:
+            rps = total_requests / global_elapsed if global_elapsed > 0 else 0
             if self.use_color:
                 console.print()
                 console.print("[bold green]List Processing Completed![/bold green]")
                 console.print(f"[bold cyan]Global Statistics:[/bold cyan]")
-                console.print(f"  Total time: {global_elapsed:.2f} seconds")
+                console.print(f"  Total time:     {global_elapsed:.2f}s")
                 console.print(f"  URLs processed: {total_urls}")
                 console.print(f"  Total requests: {total_requests}")
-                console.print(f"  Total hits: {total_hits}")
-                console.print(f"  Req/second: {total_requests/global_elapsed:.2f}")
+                console.print(f"  Total hits:     {total_hits}")
+                console.print(f"  Req/second:     {rps:.2f}")
             else:
                 print("\nList Processing Completed!")
-                print(f"Global Statistics:")
-                print(f"  Total time: {global_elapsed:.2f} seconds")
+                print(f"  Total time:     {global_elapsed:.2f}s")
                 print(f"  URLs processed: {total_urls}")
                 print(f"  Total requests: {total_requests}")
-                print(f"  Total hits: {total_hits}")
-                print(f"  Req/second: {total_requests/global_elapsed:.2f}")
+                print(f"  Total hits:     {total_hits}")
+                print(f"  Req/second:     {rps:.2f}")
     
-    def _process_url_without_progress(self, target_url: str):
-        """Process a URL without using progress bars - optimized version."""
-        # Reset statistics counters for this URL
-        self.stats = {
-            'requests': 0,
-            'hits': 0,
-            'total_time': 0,
-            'start_time': time.time(),
-            'end_time': 0
-        }
+    def _process_url_without_progress(
+        self,
+        target_url: str,
+        shared_progress=None,
+        url_task_id=None,
+    ) -> dict:
+        """Process a URL without an outer progress bar.
 
-        # Optimize extensions based on target context
+        If *shared_progress* and *url_task_id* are supplied the method updates
+        that task's total (once known) and advances it after every completed
+        future so the caller can render per-URL progress rows.
+
+        Returns a dict with 'requests', 'hits', and 'elapsed'.
+        Does NOT reset self.stats (delta approach for thread safety).
+        """
+        with self._stats_lock:
+            req_start = self.stats['requests']
+            hit_start = self.stats['hits']
+            self.stats['start_time'] = time.time()
+        scan_start = self.stats['start_time']
+
         optimized_extensions = self.extension_optimizer.optimize_extensions(
             self.extensions, target_url
         )
-        
-        # Display target information
-        if self.use_color:
-            console.rule(f"[bold blue]Target: {target_url}[/bold blue]", style="blue")
-        else:
-            title = f"Target: {target_url}"
-            print("\n" + "-" * len(title))
-            print(title)
-            print("-" * len(title))
-        
-        # Debug: check URL segments
+
+        # In list mode the console.rule would fight the live progress display;
+        # only emit it in verbose mode or when running a single URL.
+        if self.verbose:
+            if self.use_color:
+                console.rule(f"[bold blue]Target: {target_url}[/bold blue]", style="blue")
+            else:
+                title = f"Target: {target_url}"
+                print("\n" + "-" * len(title))
+                print(title)
+                print("-" * len(title))
+
         if self.verbose:
             from leftovers.utils.debug_utils import debug_url_segments
             debug_url_segments(target_url)
 
-        # Perform important extension tests (PDF, Office docs, archives)
-        self._perform_important_extension_tests(target_url, optimized_extensions)
+        in_list_mode = shared_progress is not None
+        self._perform_important_extension_tests(target_url, optimized_extensions, suppress_print=in_list_mode)
+        self._perform_direct_extension_tests(target_url, optimized_extensions, suppress_print=in_list_mode)
 
-        # Perform direct extension tests for other extensions
-        self._perform_direct_extension_tests(target_url, optimized_extensions)
+        # Only reset frequency trackers in single-URL mode; in list mode concurrent
+        # workers share these dicts and resetting mid-scan corrupts other threads.
+        if not in_list_mode:
+            with self._size_frequency_lock:
+                self._size_frequency = defaultdict(int)
+            with self._hash_frequency_lock:
+                self._hash_frequency = defaultdict(set)
 
-        # Reset size tracker for this target
-        self._size_frequency = defaultdict(int)
-        self._hash_frequency = defaultdict(set)
-
-        # Enhance backup words with domain-based wordlist if enabled
         enhanced_backup_words = self.backup_words
         if hasattr(self, 'domain_wordlist') and self.domain_wordlist and self.brute_mode:
             if self.verbose:
@@ -1189,8 +1264,7 @@ class LeftOver:
             if self.verbose:
                 logger.info(f"Wordlist enhanced: {len(self.backup_words)} -> {len(enhanced_backup_words)} words")
 
-        # Generate base URLs for testing
-        test_urls, self._main_page, self.baseline_responses = generate_test_urls(
+        test_urls, local_main_page, local_baseline = generate_test_urls(
             self.http_client,
             target_url,
             self.brute_mode,
@@ -1199,54 +1273,102 @@ class LeftOver:
             self.brute_recursive,
             self.domain_wordlist
         )
-        
+        # Store per-thread baseline so concurrent workers don't overwrite each other
+        self._thread_local.main_page = local_main_page
+        self._thread_local.baseline_responses = local_baseline
+        self._main_page = local_main_page
+        self.baseline_responses = local_baseline
+
         if not test_urls:
-            return
-        
-        # Group URLs by type for more efficient processing
+            elapsed = time.time() - scan_start
+            return {'requests': 0, 'hits': 0, 'elapsed': elapsed}
+
+        # Now that we know the full test list, set the task total so the bar
+        # renders correctly.
+        if shared_progress is not None and url_task_id is not None:
+            total_tests = 0
+            for base_url, test_type in test_urls:
+                if test_type == "critical-specific":
+                    total_tests += 1
+                else:
+                    url_path = base_url.split('/')[-1]
+                    has_ext = (
+                        '.' in url_path
+                        and len(url_path.split('.')[-1]) in range(2, 6)
+                        and url_path.split('.')[-1].isalnum()
+                    )
+                    total_tests += 1 if has_ext else len(optimized_extensions)
+            shared_progress.update(url_task_id, total=total_tests, visible=True)
+
         test_url_groups = defaultdict(list)
         for base_url, test_type in test_urls:
             test_url_groups[test_type].append(base_url)
-        
-        # Process each group of URLs
+
         for test_type, urls_for_type in test_url_groups.items():
-            # Display header for the current test type
             if not self.silent and urls_for_type:
                 self._display_test_type_header(test_type, urls_for_type[0])
-            
-            # Process in batches for better resource utilization
+
             batch_size = min(100, len(urls_for_type))
             url_batches = [urls_for_type[i:i+batch_size] for i in range(0, len(urls_for_type), batch_size)]
-            
+
+            found_in_group = False
             for batch in url_batches:
-                # Parallel tests for URLs in this batch
-                with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                # Inner pool for extension testing within this URL.
+                # Uses self.max_workers (-t) regardless of list vs single mode.
+                inner_workers = self.max_workers
+                with concurrent.futures.ThreadPoolExecutor(max_workers=inner_workers) as executor:
                     futures = {}
                     for base_url in batch:
-                        # For each URL, test all extensions in parallel
-                        for ext in optimized_extensions:
-                            future = executor.submit(self.test_url, base_url, ext, test_type)
-                            futures[future] = (base_url, ext)
-                    
-                    # Process results as they are completed
+                        if test_type == "critical-specific":
+                            future = executor.submit(self._test_single_url, base_url, "", test_type)
+                            futures[future] = (base_url, "")
+                        else:
+                            url_path = base_url.split('/')[-1]
+                            has_ext = (
+                                '.' in url_path
+                                and len(url_path.split('.')[-1]) in range(2, 6)
+                                and url_path.split('.')[-1].isalnum()
+                            )
+                            if has_ext:
+                                future = executor.submit(self._test_single_url, base_url, "", test_type)
+                                futures[future] = (base_url, "")
+                            else:
+                                for ext in optimized_extensions:
+                                    future = executor.submit(self.test_url, base_url, ext, test_type)
+                                    futures[future] = (base_url, ext)
+
                     for future in concurrent.futures.as_completed(futures):
+                        if shared_progress is not None and url_task_id is not None:
+                            shared_progress.advance(url_task_id)
                         result = future.result()
                         if result:
-                            format_and_print_result(console, result, self.use_color, self.verbose, self.silent)
-            
-            # Add a blank line after each test group
-            if not self.silent:
+                            found_in_group = True
+                            if not in_list_mode:
+                                format_and_print_result(console, result, self.use_color, self.verbose, self.silent)
+
+            # Only add spacing in single-URL mode; in list mode the progress
+            # display manages layout and extra blank lines push it down.
+            if not self.silent and (self.verbose or found_in_group) and shared_progress is None:
                 if self.use_color:
                     console.print()
                 else:
                     print()
-        
-        # Record end time for statistics
-        self.stats['end_time'] = time.time()
-        
-        # Display performance statistics if verbose
+
+        scan_end = time.time()
+        self.stats['end_time'] = scan_end
+
         if self.verbose:
             self._display_performance_stats()
+
+        elapsed = scan_end - scan_start
+        with self._stats_lock:
+            req_delta = self.stats['requests'] - req_start
+            hit_delta = self.stats['hits'] - hit_start
+        return {
+            'requests': req_delta,
+            'hits': hit_delta,
+            'elapsed': elapsed,
+        }
     
     def _export_url_results(self, url: str):
         """Export specific results for a URL."""
@@ -1275,7 +1397,8 @@ class LeftOver:
             
         print_banner(self.use_color, self.silent)
         
-        info_text = f"Version: {VERSION} | Threads: {self.max_workers} | Extensions: {len(self.extensions)}"
+        url_workers = getattr(self, 'url_workers', None) or self.max_workers
+        info_text = f"Version: {VERSION} | Workers: {url_workers} | Threads: {self.max_workers} | Extensions: {len(self.extensions)}"
 
         # Add domain wordlist info if enabled
         if hasattr(self, 'domain_wordlist') and self.domain_wordlist:
