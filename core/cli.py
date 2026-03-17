@@ -18,7 +18,10 @@ from leftovers.core.scanner import LeftOver
 from leftovers.core.detection import parse_status_codes
 from leftovers.utils.logger import logger
 from leftovers.utils.console import console, print_banner, print_info_panel
-from leftovers.utils.file_utils import load_wordlist, load_url_list, export_results, load_autosave
+from leftovers.utils.file_utils import (
+    load_wordlist, load_url_list, export_results,
+    load_autosave, load_completed_urls,
+)
 
 class ArgumentParserWithBanner(argparse.ArgumentParser):
     """Custom ArgumentParser that shows the banner before help"""
@@ -102,6 +105,7 @@ def parse_arguments():
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose mode (show more details)")
     parser.add_argument("-s", "--silent", action="store_true", help="Silent mode (show only errors)")
     parser.add_argument("--metrics", action="store_true", help="Show performance metrics at the end of scan")
+    parser.add_argument("--resume", metavar="FILE", help="Resume scan using a previous autosave (.jsonl): skips already-completed URLs and appends new results to the same file (use with -l)")
     parser.add_argument("--version", action="version", version=f"LeftOver v{VERSION}")
     
     return parser.parse_args()
@@ -317,7 +321,36 @@ def main():
                 sys.exit(1)
 
         scanner = configure_scanner_from_args(args)
-        
+
+        # --resume: switch autosave to the existing file and skip done URLs
+        if getattr(args, 'resume', None):
+            if not args.list:
+                console.print("[bold red]--resume requires -l/--list[/bold red]")
+                sys.exit(1)
+            import os as _os
+            resume_path = args.resume
+            if not _os.path.isfile(resume_path):
+                console.print(f"[bold red]Resume file not found:[/bold red] {resume_path}")
+                sys.exit(1)
+            # Load progress from the existing file
+            scanner.skip_urls = load_completed_urls(resume_path)
+            prev_hits = load_autosave(resume_path)
+            scanner.results = list(prev_hits)
+            # Switch autosave to the existing file (close+delete the empty new one)
+            scanner.close()
+            try:
+                _os.unlink(scanner._autosave_path)
+            except OSError:
+                pass
+            scanner._autosave_path = resume_path
+            scanner._autosave_fh = open(resume_path, 'a', encoding='utf-8')
+            if not args.silent:
+                console.print(
+                    f"[bold cyan]Resuming from:[/bold cyan] {resume_path} "
+                    f"([green]{len(scanner.skip_urls)} URLs done[/green], "
+                    f"[yellow]{len(prev_hits)} hits already saved[/yellow])"
+                )
+
         # Let the scanner class display the banner and information panel
         # to ensure that all information, including the word count,
         # is displayed correctly

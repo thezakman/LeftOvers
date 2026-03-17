@@ -24,7 +24,10 @@ from leftovers.utils.console import (
     create_progress_bar, format_and_print_result, create_url_list_progress,
     print_section_separator
 )
-from leftovers.utils.file_utils import load_url_list, create_autosave_file, append_result_to_jsonl
+from leftovers.utils.file_utils import (
+    load_url_list, create_autosave_file,
+    append_result_to_jsonl, append_completed_url_to_jsonl,
+)
 from leftovers.utils.http_utils import HttpClient
 from leftovers.utils.url_utils import generate_test_urls
 from leftovers.utils.extension_optimizer import ExtensionOptimizer
@@ -125,6 +128,9 @@ class LeftOver:
         # survive Ctrl+C or unexpected crashes.
         self._autosave_path = create_autosave_file()
         self._autosave_fh = open(self._autosave_path, 'a', encoding='utf-8')
+
+        # Resume support: URLs to skip because they were already fully scanned
+        self.skip_urls: Set[str] = set()
         
         # Performance metrics tracking
         self.metrics = ScanMetrics()
@@ -1130,6 +1136,17 @@ class LeftOver:
         def _scan_one(idx: int, url: str):
             nonlocal total_requests, total_hits, done_count
 
+            # Resume mode: skip URLs already fully scanned in a previous run
+            if url in self.skip_urls:
+                with stats_lock:
+                    done_count += 1
+                    progress.update(
+                        summary_task,
+                        advance=1,
+                        description=f"[bold cyan]{done_count}/{total_urls} URLs • {total_hits} hits",
+                    )
+                return
+
             # Claim a slot — blocks only if all workers are busy (never deadlocks
             # because the pool has exactly n_url_workers slots and the executor
             # runs at most n_url_workers threads concurrently).
@@ -1145,6 +1162,9 @@ class LeftOver:
                 shared_progress=progress,
                 url_task_id=url_task,
             )
+
+            # Mark this URL as fully scanned so --resume can skip it next run
+            append_completed_url_to_jsonl(self._autosave_fh, url)
 
             if self.output_per_url and self.output_file:
                 self._export_url_results(url)

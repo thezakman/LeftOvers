@@ -129,6 +129,51 @@ def append_result_to_jsonl(file_handle, result: Any) -> None:
         pass  # Never crash the scan due to autosave issues
 
 
+def append_completed_url_to_jsonl(file_handle, url: str) -> None:
+    """
+    Write a URL-completion marker so resume mode can skip already-scanned URLs.
+
+    Args:
+        file_handle: Open file handle (append mode)
+        url: The URL that finished scanning
+    """
+    try:
+        file_handle.write(json.dumps({"_type": "done", "url": url}) + "\n")
+        file_handle.flush()
+    except Exception:
+        pass
+
+
+def load_completed_urls(file_path: str) -> set:
+    """
+    Return the set of URLs that have a completion marker in a JSONL file.
+
+    Args:
+        file_path: Path to the .jsonl autosave file
+
+    Returns:
+        Set of completed URL strings
+    """
+    completed: set = set()
+    if not os.path.isfile(file_path):
+        return completed
+    try:
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    data = json.loads(line)
+                    if data.get("_type") == "done" and data.get("url"):
+                        completed.add(data["url"])
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    return completed
+
+
 def load_autosave(file_path: str) -> List[Any]:
     """
     Load scan results from a JSONL autosave file.
@@ -154,6 +199,8 @@ def load_autosave(file_path: str) -> List[Any]:
                     continue
                 try:
                     data = json.loads(line)
+                    if data.get("_type"):
+                        continue  # skip internal markers (e.g. {"_type":"done",...})
                     results.append(ScanResult.from_dict(data))
                 except (json.JSONDecodeError, Exception) as e:
                     logger.warning(f"Skipping malformed line {lineno} in {file_path}: {e}")
