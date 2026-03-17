@@ -5,7 +5,7 @@ Global application settings for LeftOvers tool.
 import urllib3
 
 # Version information
-VERSION = "1.6.0"
+VERSION = "1.6.1"
 
 # General settings
 DEBUG = False
