@@ -7,6 +7,7 @@ import sys
 import argparse
 import traceback
 import signal
+import _thread
 
 from leftovers.app_settings import VERSION
 from leftovers.core.config import (
@@ -258,12 +259,24 @@ def configure_scanner_from_args(args):
     
     return scanner
 
+_interrupted = False
+
 def handle_interrupt(signum, frame):
-    """Handle keyboard interrupt gracefully."""
+    """Handle keyboard interrupt.
+
+    First Ctrl+C: graceful — signals main thread to clean up and exit.
+    Second Ctrl+C: hard kill via os._exit() so the user is never stuck.
+    """
+    global _interrupted
+    if _interrupted:
+        # User is impatient — bail out immediately without waiting for threads
+        os._exit(1)
+    _interrupted = True
     silent = '-s' in sys.argv or '--silent' in sys.argv
     if not silent:
         console.print("\n[bold red]Interrupted by user. Cleaning up...[/bold red]")
-    sys.exit(0)
+    # Interrupt the main thread so the except KeyboardInterrupt block runs
+    _thread.interrupt_main()
 
 def main():
     """Main function for the command-line interface."""
@@ -330,13 +343,14 @@ def main():
             export_results(scanner.results, args.output)
             
     except KeyboardInterrupt:
-        if not getattr(args, 'silent', False):
-            console.print("\n[bold red]Interrupted by user.[/bold red]")
         if 'scanner' in dir():
             scanner.close()
-            if scanner.results and not getattr(args, 'silent', False):
+            if not getattr(args, 'silent', False) and scanner.results:
                 console.print(f"[dim]Autosave: {scanner._autosave_path}[/dim]")
-        sys.exit(1)
+        # os._exit() terminates immediately without waiting for daemon threads
+        # to finish their current HTTP requests (which could take minutes).
+        # Autosave is already flushed on every hit, so no data is lost.
+        os._exit(1)
     except ValueError as e:
         logger.error(str(e))
         sys.exit(1)
