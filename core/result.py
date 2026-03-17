@@ -77,3 +77,31 @@ class ScanResult:
         """Mark a result as false positive with a reason."""
         self.false_positive = True
         self.false_positive_reason = reason
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'ScanResult':
+        """Reconstruct a ScanResult from a dictionary (e.g. loaded from JSONL)."""
+        ts = data.get("timestamp")
+        if isinstance(ts, str):
+            try:
+                from datetime import datetime as _dt
+                ts = _dt.fromisoformat(ts)
+            except ValueError:
+                ts = datetime.now()
+        elif not isinstance(ts, datetime):
+            ts = datetime.now()
+        return cls(
+            url=data.get("url", ""),
+            status_code=data.get("status_code", 0),
+            content_type=data.get("content_type", ""),
+            content_length=data.get("content_length", 0),
+            response_time=data.get("response_time", 0.0),
+            test_type=data.get("test_type", ""),
+            extension=data.get("extension", ""),
+            content_hash=data.get("content_hash", ""),
+            false_positive=data.get("false_positive", False),
+            false_positive_reason=data.get("false_positive_reason", ""),
+            large_file=data.get("large_file", False),
+            partial_content=data.get("partial_content", False),
+            timestamp=ts,
+        )

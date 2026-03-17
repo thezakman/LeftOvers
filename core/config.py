@@ -131,6 +131,23 @@ EXTRAS_EXTENSIONS = [
     "ash", "ashx", "cs", "publishproj", "cvs",
 ]
 
+# LEGACY / NICHE SERVER EXTENSIONS - Older/less common but still found
+LEGACY_EXTENSIONS = [
+    "inc",          # PHP includes exposed directly
+    "phps",         # PHP source view (misconfig exposes source)
+    "cfm", "cfc",   # ColdFusion (common in enterprise)
+    "pl", "cgi",    # Perl/CGI scripts
+    "md",           # README.md, CHANGELOG.md — version disclosure
+    "shtml", "shtm", # SSI files
+]
+
+# CONFIG DOUBLE-EXTENSION BACKUPS - config files backed up with .bak
+CONFIG_BACKUP_EXTENSIONS = [
+    "json.bak", "yaml.bak", "yml.bak",
+    "xml.bak",  "ini.bak",  "cfg.bak",
+    "conf.bak", "env.bak",  "toml.bak",
+]
+
 # SPECIFIC FILES - Complete filenames that should be tested directly
 # Organized by priority - CRITICAL files first
 CRITICAL_SPECIFIC_FILES = [
@@ -147,6 +164,8 @@ CRITICAL_SPECIFIC_FILES = [
     ".htaccess", "web.config", "web.debug.config",
     # PHP config (very common exposure)
     "wp-config.php", "config.php", "phpinfo.php", "info.php",
+    # DB admin tools left in production
+    "adminer.php", "adminer.php.bak",
 ]
 
 SPECIFIC_FILES = [
@@ -169,8 +188,15 @@ SPECIFIC_FILES = [
     "bootstrap.yml", "config.yml",
     # Environment config
     "env-config.js", "env.js", "environment.js", "environment.json", "environment.ts",
-    # Other files
-    ".DS_Store", ".well-known", "robots.txt", "sitemap.xml",
+    ".env.example", ".env.sample",
+    # WordPress backups (very commonly found)
+    "wp-config.php.bak", "wp-config.php.old", "wp-config.bak",
+    # IaC state files (contain secrets in plaintext)
+    "terraform.tfstate", "terraform.tfstate.backup",
+    # OS artifacts (reveal directory structure)
+    ".DS_Store", "Thumbs.db", "desktop.ini",
+    # Misc
+    ".well-known", "robots.txt", "sitemap.xml",
     "log_all", "error_log", "access_log", "log.mdb",
     "latest-logs.zip",
 ]
@@ -196,7 +222,9 @@ DEFAULT_EXTENSIONS = [
     *VCS_LEFTOVER_EXTENSIONS,
     *DOCUMENT_BACKUP_EXTENSIONS,
     *BUILD_CONFIG_EXTENSIONS,
-    *EXTRAS_EXTENSIONS
+    *LEGACY_EXTENSIONS,
+    *CONFIG_BACKUP_EXTENSIONS,
+    *EXTRAS_EXTENSIONS,
 ]
 
 DEFAULT_FILES_WORDS = [
@@ -277,6 +305,20 @@ EN_COMMON_WORDS = [
     "society", "statement", "strategy", "strategic", "supplier", "support", "tax",
     "test", "token", "transaction", "unit", "upload", "uploads", "user", "vpn", "wap",
     "api", "dashboard", "panel", "login", "cms",
+    # Security tools / admin panels left in production
+    "phpinfo", "info", "adminer", "pma", "phpmyadmin", "xmlrpc",
+    # Credential/session shortforms
+    "creds", "secrets", "cache", "session",
+    # DB connection files
+    "connect", "connection", "dbconfig", "dbconn",
+    # Web shell leftovers
+    "shell",
+    # DB dumps
+    "migration", "mysqldump", "db_dump", "sql_dump",
+    # IaC / DevOps artifacts
+    "terraform", "ansible", "helm", "values", "pipeline", "deployment",
+    # WordPress
+    "wp-config",
 ]
 
 PTBR_BUSINESS_WORDS = [
@@ -312,8 +354,10 @@ PTBR_TECHNICAL_WORDS = [
     "anexo", "autenticacao", "caixa", "certificado", "correio", "criptografia",
     "digitalizar", "download", "email", "entrada", "enviado", "extranet", "fila",
     "firewall", "impressao", "impressora", "intranet", "mensagem", "proxy", "rede",
-    "saida", "scanner", "token", "upload", "uploads", "vpn",  "variaveis",
+    "saida", "scanner", "token", "upload", "uploads", "vpn", "variaveis",
     "variavel",
+    # PT-BR equivalents of new EN words
+    "conexao", "migracao", "sessao", "cache", "credenciais", "chaves",
 ]
 
 DATABASE_CONFIG_WORDS = [

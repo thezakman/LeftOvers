@@ -17,7 +17,7 @@ from leftovers.core.scanner import LeftOver
 from leftovers.core.detection import parse_status_codes
 from leftovers.utils.logger import logger
 from leftovers.utils.console import console, print_banner, print_info_panel
-from leftovers.utils.file_utils import load_wordlist, load_url_list, export_results
+from leftovers.utils.file_utils import load_wordlist, load_url_list, export_results, load_autosave
 
 class ArgumentParserWithBanner(argparse.ArgumentParser):
     """Custom ArgumentParser that shows the banner before help"""
@@ -52,6 +52,7 @@ def parse_arguments():
     target_group = parser.add_mutually_exclusive_group(required=True)
     target_group.add_argument("-u", "--url", help="Single URL or domain to scan")
     target_group.add_argument("-l", "--list", help="File with list of URLs/domains")
+    target_group.add_argument("--restore", metavar="FILE", help="Restore and display results from a previous autosave (.jsonl) file")
     
     # Extension options (mutually exclusive)
     ext_group = parser.add_mutually_exclusive_group()
@@ -272,14 +273,36 @@ def main():
     
     try:
         args = parse_arguments()
-        
+
+        # --restore mode: load a previous autosave and display results
+        if args.restore:
+            if not args.silent:
+                print_banner(True, False)
+            results = load_autosave(args.restore)
+            if not results:
+                console.print(f"[bold red]No results found in:[/bold red] {args.restore}")
+                sys.exit(1)
+            from leftovers.utils.console import format_and_print_result
+            from leftovers.utils.report import generate_summary_report
+            use_color = not (args.no_color or os.environ.get("NO_COLOR"))
+            if not args.silent:
+                console.print(f"[bold cyan]Restoring {len(results)} result(s) from:[/bold cyan] {args.restore}\n")
+            for result in results:
+                format_and_print_result(console, result, use_color=use_color,
+                                        verbose=args.verbose, silent=args.silent)
+            if not args.silent:
+                generate_summary_report(results, console, use_color, args.verbose)
+            if args.output:
+                export_results(results, args.output)
+            sys.exit(0)
+
         # Validate single URL if provided
         if args.url:
             is_valid, error_msg = validate_url(args.url)
             if not is_valid:
                 console.print(f"[bold red]Invalid URL:[/bold red] {error_msg}")
                 sys.exit(1)
-        
+
         scanner = configure_scanner_from_args(args)
         
         # Let the scanner class display the banner and information panel
@@ -309,6 +332,10 @@ def main():
     except KeyboardInterrupt:
         if not getattr(args, 'silent', False):
             console.print("\n[bold red]Interrupted by user.[/bold red]")
+        if 'scanner' in dir():
+            scanner.close()
+            if scanner.results and not getattr(args, 'silent', False):
+                console.print(f"[dim]Autosave: {scanner._autosave_path}[/dim]")
         sys.exit(1)
     except ValueError as e:
         logger.error(str(e))

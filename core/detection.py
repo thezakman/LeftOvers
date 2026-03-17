@@ -198,9 +198,9 @@ def check_false_positive(
         hash_frequency[content_hash] = set()
     hash_frequency[content_hash].add(result.url)
     
-    # Skip false positive detection for zero-sized responses
+    # Zero-byte responses are false positives — server returned 200 with empty body
     if result.content_length == 0:
-        return False, ""
+        return True, "empty response (0 bytes)"
     
     # PRIORITY CHECK: Compare against baseline error responses FIRST
     # This catches servers that return the same content (like error GIFs) for non-existent files

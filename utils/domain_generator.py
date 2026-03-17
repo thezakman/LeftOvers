@@ -73,17 +73,38 @@ class DomainWordlistGenerator:
                 f"{domain}{subdomain}",
                 f"{subdomain}_{domain}",
                 f"{domain}_{subdomain}",
+                f"{subdomain}-{domain}",
+                f"{domain}-{subdomain}",
             ])
 
-        # Priority 2: Common backup patterns
+        # Priority 2: Common backup patterns (dot, underscore, and hyphen separators)
         if domain:
-            backup_patterns = ["backup", "bak", "old", "temp"]  # Reduced to most effective
+            backup_patterns = ["backup", "bak", "old", "temp"]
             for pattern in backup_patterns:
                 variations.update([
                     f"{pattern}{domain}",
                     f"{domain}{pattern}",
                     f"{pattern}_{domain}",
                     f"{domain}_{pattern}",
+                    f"{pattern}-{domain}",
+                    f"{domain}-{pattern}",
+                ])
+
+        # Priority 2b: Year and version suffix combos with domain
+        if domain:
+            import datetime
+            current_year = datetime.datetime.now().year
+            for year in range(current_year - 2, current_year + 1):
+                variations.update([
+                    f"{domain}_{year}",
+                    f"{domain}-{year}",
+                    f"{domain}{year}",
+                ])
+            for v in range(1, 4):
+                variations.update([
+                    f"{domain}_v{v}",
+                    f"{domain}-v{v}",
+                    f"{domain}v{v}",
                 ])
 
         # Priority 3: Composite subdomain permutations (most effective for leftovers)

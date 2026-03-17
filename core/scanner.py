@@ -24,7 +24,7 @@ from leftovers.utils.console import (
     create_progress_bar, format_and_print_result, create_url_list_progress,
     print_section_separator
 )
-from leftovers.utils.file_utils import load_url_list
+from leftovers.utils.file_utils import load_url_list, create_autosave_file, append_result_to_jsonl
 from leftovers.utils.http_utils import HttpClient
 from leftovers.utils.url_utils import generate_test_urls
 from leftovers.utils.extension_optimizer import ExtensionOptimizer
@@ -120,6 +120,11 @@ class LeftOver:
         self._results_lock = threading.Lock()
         # Per-thread baseline data so concurrent URL workers don't overwrite each other
         self._thread_local = threading.local()
+
+        # Autosave: write each hit to a JSONL file immediately so results
+        # survive Ctrl+C or unexpected crashes.
+        self._autosave_path = create_autosave_file()
+        self._autosave_fh = open(self._autosave_path, 'a', encoding='utf-8')
         
         # Performance metrics tracking
         self.metrics = ScanMetrics()
@@ -225,7 +230,8 @@ class LeftOver:
         """
         with self._results_lock:
             self.results.append(scan_result)
-            
+            append_result_to_jsonl(self._autosave_fh, scan_result)
+
             # Track metrics
             if hasattr(self, 'metrics'):
                 # Extract extension from URL
@@ -1410,14 +1416,29 @@ class LeftOver:
         
         print_info_panel(info_text, self.use_color, backup_words_count)
     
+    def close(self):
+        """Close open resources (autosave file handle)."""
+        try:
+            self._autosave_fh.close()
+        except Exception:
+            pass
+
     def print_summary(self):
         """Print a summary of the found results - optimized version."""
         from leftovers.utils.report import generate_summary_report
-        
+
+        self.close()
+
         if not self.results or self.silent:
             return
-            
+
         generate_summary_report(self.results, console, self.use_color, self.verbose)
+
+        if not self.silent and self.results:
+            if self.use_color:
+                console.print(f"[dim]Autosave: {self._autosave_path}[/dim]")
+            else:
+                print(f"Autosave: {self._autosave_path}")
     
     def run(self):
         """Run the scanner with the current settings - optimized version."""
