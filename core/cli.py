@@ -52,11 +52,10 @@ def parse_arguments():
         silent_mode=silent_mode
     )
     
-    # Target group (mutually exclusive)
-    target_group = parser.add_mutually_exclusive_group(required=True)
+    # Target group (mutually exclusive, not required when --resume is used alone)
+    target_group = parser.add_mutually_exclusive_group(required=False)
     target_group.add_argument("-u", "--url", help="Single URL or domain to scan")
     target_group.add_argument("-l", "--list", help="File with list of URLs/domains")
-    target_group.add_argument("--restore", metavar="FILE", help="Restore and display results from a previous autosave (.jsonl) file")
     
     # Extension options (mutually exclusive)
     ext_group = parser.add_mutually_exclusive_group()
@@ -105,7 +104,10 @@ def parse_arguments():
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose mode (show more details)")
     parser.add_argument("-s", "--silent", action="store_true", help="Silent mode (show only errors)")
     parser.add_argument("--metrics", action="store_true", help="Show performance metrics at the end of scan")
-    parser.add_argument("--resume", metavar="FILE", help="Resume scan using a previous autosave (.jsonl): skips already-completed URLs and appends new results to the same file (use with -l)")
+    parser.add_argument("--resume", metavar="FILE",
+                        help="Resume from a previous autosave (.jsonl). "
+                             "With -l: skips completed URLs and continues scan. "
+                             "Alone: displays saved results.")
     parser.add_argument("--version", action="version", version=f"LeftOver v{VERSION}")
     
     return parser.parse_args()
@@ -291,19 +293,25 @@ def main():
     try:
         args = parse_arguments()
 
-        # --restore mode: load a previous autosave and display results
-        if args.restore:
-            if not args.silent:
-                print_banner(True, False)
-            results = load_autosave(args.restore)
-            if not results:
-                console.print(f"[bold red]No results found in:[/bold red] {args.restore}")
-                sys.exit(1)
+        # Validate that at least one target is provided
+        if not args.url and not args.list and not args.resume:
+            parser.error("one of the arguments -u/--url -l/--list --resume is required")
+
+        # --resume alone (no -l): display saved results only
+        if args.resume and not args.list and not args.url:
             from leftovers.utils.console import format_and_print_result
             from leftovers.utils.report import generate_summary_report
+            if not args.silent:
+                print_banner(True, False)
+            results = load_autosave(args.resume)
             use_color = not (args.no_color or os.environ.get("NO_COLOR"))
             if not args.silent:
-                console.print(f"[bold cyan]Restoring {len(results)} result(s) from:[/bold cyan] {args.restore}\n")
+                completed = load_completed_urls(args.resume)
+                console.print(
+                    f"[bold cyan]Resume file:[/bold cyan] {args.resume}  "
+                    f"([green]{len(completed)} URLs scanned[/green], "
+                    f"[yellow]{len(results)} hits[/yellow])\n"
+                )
             for result in results:
                 format_and_print_result(console, result, use_color=use_color,
                                         verbose=args.verbose, silent=args.silent)
@@ -322,11 +330,8 @@ def main():
 
         scanner = configure_scanner_from_args(args)
 
-        # --resume: switch autosave to the existing file and skip done URLs
+        # --resume + -l: switch autosave to the existing file and skip done URLs
         if getattr(args, 'resume', None):
-            if not args.list:
-                console.print("[bold red]--resume requires -l/--list[/bold red]")
-                sys.exit(1)
             import os as _os
             resume_path = args.resume
             if not _os.path.isfile(resume_path):
