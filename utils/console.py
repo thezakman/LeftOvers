@@ -461,10 +461,22 @@ def print_url_list_progress(current: int, total: int, url: str, use_color: bool 
 
 def create_url_list_progress(total: int, use_color: bool = True):
     """Create a progress bar for URL list processing."""
+    from rich.table import Column
+
+    try:
+        _term_w = shutil.get_terminal_size().columns
+    except Exception:
+        _term_w = 120
+    _fixed_cols = 56
+    _desc_max = max(20, _term_w - _fixed_cols)
+
     progress = Progress(
         SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(bar_width=28),
+        TextColumn(
+            "[progress.description]{task.description}",
+            table_column=Column(no_wrap=True, max_width=_desc_max),
+        ),
+        BarColumn(),
         MofNCompleteColumn(),
         TextColumn("•"),
         TimeElapsedColumn(),
@@ -472,6 +484,7 @@ def create_url_list_progress(total: int, use_color: bool = True):
         TimeRemainingColumn(),
         console=console if use_color else None,
         transient=False,
+        refresh_per_second=4,
     )
     task_id = progress.add_task("[cyan]Starting…", total=total)
     return progress, task_id

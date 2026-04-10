@@ -1073,10 +1073,12 @@ class LeftOver:
         grows after it starts, preventing the progress block from "jumping down".
         """
         import queue as _queue
+        import shutil as _shutil
         from rich.progress import (
             Progress, SpinnerColumn, TextColumn, BarColumn,
             MofNCompleteColumn, TimeElapsedColumn, TimeRemainingColumn,
         )
+        from rich.table import Column
 
         urls = load_url_list(url_list_file)
         if not urls:
@@ -1106,10 +1108,25 @@ class LeftOver:
             )
             n_url_workers = max(1, n_url_workers)
 
+        # Cap the description column so long URLs never cause line-wrapping.
+        # When a line wraps, Rich's Live cursor-up calculation drifts and the
+        # whole progress block progressively shrinks then snaps back.
+        try:
+            _term_w = _shutil.get_terminal_size().columns
+        except Exception:
+            _term_w = 120
+        # Reserve space for: spinner(2) + bar(>=10) + M/N(12) + 2×dot(2)
+        #                    + elapsed(10) + remaining(10) + padding(~10)
+        _fixed_cols = 56
+        _desc_max = max(20, _term_w - _fixed_cols)
+
         progress = Progress(
             SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(bar_width=28),
+            TextColumn(
+                "[progress.description]{task.description}",
+                table_column=Column(no_wrap=True, max_width=_desc_max),
+            ),
+            BarColumn(),
             MofNCompleteColumn(),
             TextColumn("•"),
             TimeElapsedColumn(),
@@ -1117,6 +1134,7 @@ class LeftOver:
             TimeRemainingColumn(),
             console=console if self.use_color else None,
             transient=False,
+            refresh_per_second=4,
         )
 
         # Summary row — always first, never hidden
