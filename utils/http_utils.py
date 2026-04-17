@@ -8,7 +8,6 @@ import time
 import threading
 from urllib.parse import urlparse
 from typing import Dict, Optional, Any, Tuple
-from functools import lru_cache
 from collections import OrderedDict
 
 import requests
@@ -231,56 +230,55 @@ class HttpClient:
 
                 self._last_request_time = time.time()
 
-    def get(self, url: str) -> Dict[str, Any]:
-        """
-        Make a GET request to the specified URL with optimized handling and rate limiting.
+    def get(self, url: str,
+            extra_headers: Optional[Dict[str, str]] = None,
+            range_bytes: Optional[Tuple[int, int]] = None) -> Dict[str, Any]:
+        """Make a GET request with optimized handling and rate limiting.
 
         Args:
-            url: URL to request
+            url: URL to request.
+            extra_headers: Per-request headers merged on top of session headers.
+            range_bytes: Optional (start, end) byte range to request. When set,
+                caching is bypassed and streaming is used to avoid buffering.
 
         Returns:
-            Dictionary containing:
-            - 'success': Boolean indicating if request was successful
-            - 'response': Response object if successful
-            - 'error': Error string if not successful
-            - 'time': Time taken in seconds
-            - 'large_file': Boolean indicating if file is large
-            - 'partial_content': Boolean indicating if content is partial
+            Dict with success/response/error/time/large_file/partial_content.
         """
         # Apply rate limiting before making the request
         self._apply_rate_limit()
+
+        # Ranged requests bypass the cache (different semantics, different body)
+        cacheable = self.request_cache is not None and range_bytes is None
 
         # Always log requests in verbose mode, regardless of where called from
         # Import VERBOSE directly here to avoid circular imports
         from leftovers.app_settings import VERBOSE
         if VERBOSE:
             logger.debug(f"HTTP Request: GET {url}")
-            
+
         # Check cache first if enabled
-        if self.request_cache:
+        if cacheable:
             cached = self.request_cache.get(url)
             if cached:
                 self.cache_hits += 1
                 if VERBOSE:
                     logger.debug(f"Cache hit for {url}")
-                # Create a mock response object for compatibility
                 if cached["success"]:
                     mock_response = type('MockResponse', (), {
                         'status_code': cached["status_code"],
                         'headers': cached["headers"],
-                        'content': b'',  # Empty content for cached responses
+                        'content': cached.get("content", b""),
                     })()
                     return {
                         "success": True,
                         "response": mock_response,
                         "time": cached["time"],
-                        "error": cached["error"]
+                        "error": cached.get("error", ""),
+                        "from_cache": True,
                     }
-                else:
-                    return cached
-            else:
-                self.cache_misses += 1
-        else:
+                return cached
+            self.cache_misses += 1
+        elif self.request_cache is not None:
             self.cache_misses += 1
         
         # Rotate User-Agent if needed
@@ -298,123 +296,156 @@ class HttpClient:
             "from_cache": False
         }
         
+        # Caller-requested range: behave as a streaming ranged GET and skip
+        # the large-file autodetect (the caller already decided).
+        if range_bytes is not None:
+            req_headers = {k: v for k, v in self.session.headers.items()}
+            if extra_headers:
+                req_headers.update(extra_headers)
+            start, end = range_bytes
+            req_headers['Range'] = f'bytes={start}-{end}'
+            try:
+                response = self.session.get(
+                    url,
+                    timeout=self.timeout,
+                    headers=req_headers,
+                    stream=True,
+                    allow_redirects=True,
+                )
+                # Read up to (end-start+1) bytes
+                max_read = max(0, end - start + 1)
+                content = b''
+                for chunk in response.iter_content(chunk_size=CHUNK_SIZE):
+                    if not chunk:
+                        continue
+                    content += chunk
+                    if len(content) >= max_read:
+                        content = content[:max_read]
+                        break
+                response._content = content
+                result["success"] = True
+                result["response"] = response
+                result["partial_content"] = True
+            except requests.exceptions.Timeout:
+                result["error"] = "Request timed out"
+            except requests.exceptions.SSLError:
+                result["error"] = "SSL verification failed"
+            except requests.exceptions.ConnectionError:
+                result["error"] = "Connection error"
+            except requests.exceptions.RequestException as e:
+                result["error"] = f"Request error: {str(e)}"
+            result["time"] = time.time() - start_time
+            return result
+
         try:
             # First check if URL might contain a large file based on extension
             likely_large_file = self._check_if_likely_large_file(url)
-            
+
             # For potentially large files or unknown files, check with HEAD first
             head_response = None
             content_length = None
             content_type = None
             is_large = False
-            
+
             try:
                 # Use HEAD to check file size and type before downloading
+                head_headers = None
+                if extra_headers:
+                    head_headers = {**self.session.headers, **extra_headers}
                 head_response = self.session.head(
-                    url, 
-                    timeout=max(1, self.timeout / 2),  # HEAD requests should be faster
-                    allow_redirects=True
+                    url,
+                    timeout=max(1, self.timeout / 2),
+                    allow_redirects=True,
+                    headers=head_headers,
                 )
-                
+
                 # Check size based on Content-Length header
                 content_length = head_response.headers.get('Content-Length')
                 content_type = head_response.headers.get('Content-Type', '')
-                
+
                 if content_length:
                     try:
                         size = int(content_length)
                         is_large = size > MAX_FILE_SIZE_MB * 1024 * 1024
                     except (ValueError, TypeError):
-                        # If we can't parse content length, check content type
                         is_large = any(ct in content_type.lower() for ct in self._large_content_types)
                 elif any(ct in content_type.lower() for ct in self._large_content_types):
-                    # If no content length but content type is known to be large
                     is_large = True
-                    
-                # Also check URL extension as backup
+
                 if not is_large and likely_large_file:
                     is_large = True
-                    
+
             except requests.exceptions.RequestException:
                 # If HEAD fails, continue with normal GET
                 pass
-            
+
             # Handle large files - get partial content
             if is_large:
-                # Set headers to download only part of the content
                 headers = {k: v for k, v in self.session.headers.items()}
-                # Get only first 8KB for analysis
+                if extra_headers:
+                    headers.update(extra_headers)
                 headers['Range'] = 'bytes=0-8191'
-                
+
                 try:
                     response = self.session.get(
-                        url, 
+                        url,
                         timeout=self.timeout,
                         headers=headers,
                         stream=True,
-                        allow_redirects=True
+                        allow_redirects=True,
                     )
-                    
-                    # Read only the partial content
+
                     content = next(response.iter_content(CHUNK_SIZE), b'')
-                    
-                    # Store the content in the response
                     response._content = content
-                    
-                    # If HEAD request worked, keep original size information
+
                     if content_length and head_response:
-                        # Copy relevant headers from HEAD response
                         for header in ('Content-Length', 'Content-Type', 'Last-Modified', 'ETag'):
                             if header in head_response.headers and header not in response.headers:
                                 response.headers[header] = head_response.headers[header]
-                    
+
                     result["success"] = True
                     result["response"] = response
                     result["large_file"] = True
                     result["partial_content"] = True
-                    
-                except Exception as e:
-                    # If Range header fails, try without it but with limited streaming
+
+                except requests.exceptions.RequestException:
+                    # Fallback: stream without Range header
                     try:
+                        fallback_headers = {**self.session.headers, **(extra_headers or {})}
                         response = self.session.get(
-                            url, 
+                            url,
                             timeout=self.timeout,
                             stream=True,
-                            allow_redirects=True
+                            allow_redirects=True,
+                            headers=fallback_headers,
                         )
-                        
-                        # Read only a limited part of the content
+
                         content = b''
-                        chunk_counter = 0
-                        max_chunks = 5  # Limit to 5 chunks (40KB with default CHUNK_SIZE of 8KB)
-                        
-                        for chunk in response.iter_content(chunk_size=CHUNK_SIZE):
+                        max_chunks = 5
+                        for idx, chunk in enumerate(response.iter_content(chunk_size=CHUNK_SIZE)):
                             content += chunk
-                            chunk_counter += 1
-                            if chunk_counter >= max_chunks:
+                            if idx + 1 >= max_chunks:
                                 break
-                        
-                        # Store the partially read content
+
                         response._content = content
                         result["success"] = True
                         result["response"] = response
                         result["large_file"] = True
                         result["partial_content"] = True
-                        
-                    except Exception as inner_e:
-                        # If both methods fail, log the error
+
+                    except requests.exceptions.RequestException as inner_e:
                         result["error"] = f"Failed to fetch partial content: {str(inner_e)}"
             else:
-                # Normal GET for small files
                 response = self.session.get(
-                    url, 
+                    url,
                     timeout=self.timeout,
-                    allow_redirects=True
+                    allow_redirects=True,
+                    headers={**self.session.headers, **extra_headers} if extra_headers else None,
                 )
-                
+
                 result["success"] = True
                 result["response"] = response
-            
+
         except requests.exceptions.Timeout:
             result["error"] = "Request timed out"
         except requests.exceptions.SSLError:
@@ -423,25 +454,29 @@ class HttpClient:
             result["error"] = "Connection error"
         except requests.exceptions.RequestException as e:
             result["error"] = f"Request error: {str(e)}"
-        except Exception as e:
-            result["error"] = f"Unexpected error: {str(e)}"
         finally:
             result["time"] = time.time() - start_time
-        
-        # Cache the result if successful and caching is enabled
-        if self.request_cache and result["success"]:
-            # Add current result to cache (lightweight version to save memory)
-            # LRUCache automatically manages size and evicts least recently used
-            cached_result = {
-                "success": result["success"],
-                "response": None,  # Don't cache the full response object
-                "error": result.get("error", ""),
-                "time": result["time"],
-                "status_code": getattr(result.get("response"), "status_code", 0),
-                "headers": dict(getattr(result.get("response"), "headers", {}))
-            }
-            self.request_cache.put(url, cached_result)
-            
+
+        # Cache body + status + headers so repeated GETs don't collapse FP detection.
+        # Skip caching for ranged or large-file responses (different semantics).
+        if cacheable and result["success"] and not result["large_file"]:
+            resp = result["response"]
+            try:
+                content = resp.content if resp is not None else b""
+            except Exception:
+                content = b""
+            # Guardrail: don't cache bodies above 256 KB to bound memory
+            if content is not None and len(content) <= 256 * 1024:
+                cached_result = {
+                    "success": True,
+                    "error": result.get("error", ""),
+                    "time": result["time"],
+                    "status_code": getattr(resp, "status_code", 0),
+                    "headers": dict(getattr(resp, "headers", {})),
+                    "content": content,
+                }
+                self.request_cache.put(url, cached_result)
+
         return result
     
     def _check_if_likely_large_file(self, url: str) -> bool:
@@ -497,29 +532,40 @@ class HttpClient:
             "total_requests": total_requests
         }
 
-@lru_cache(maxsize=512)
 def parse_url(url: str) -> Tuple[str, str, str]:
-    """
-    Parse a URL into its base, domain and path components (with caching).
-    
-    Args:
-        url: URL to parse
-        
-    Returns:
-        Tuple of (base_url, domain, path)
-    """
+    """Parse a URL into its base, domain and path components."""
     parsed = urlparse(url)
-    
-    # Extract scheme and netloc
     base_url = f"{parsed.scheme}://{parsed.netloc}"
-    
-    # Get domain name efficiently using tldextract
+
     domain_info = tldextract.extract(url)
     domain = f"{domain_info.domain}.{domain_info.suffix}"
     if domain_info.subdomain:
         domain = f"{domain_info.subdomain}.{domain}"
-        
-    # Process path
+
     path = parsed.path.strip('/')
-    
     return base_url, domain, path
+
+
+def parse_url_full(url: str) -> Tuple[str, str, str, str, str, str]:
+    """Like parse_url but also returns the tldextract parts so callers avoid
+    a second tldextract.extract() call. Returns
+    (base_url, domain, path, subdomain, domain_name, suffix)."""
+    parsed = urlparse(url)
+    base_url = f"{parsed.scheme}://{parsed.netloc}"
+
+    domain_info = tldextract.extract(url)
+    domain_name = domain_info.domain
+    suffix = domain_info.suffix
+    subdomain = domain_info.subdomain
+    domain = f"{domain_name}.{suffix}" if suffix else domain_name
+    if subdomain:
+        domain = f"{subdomain}.{domain}"
+
+    path = parsed.path.strip('/')
+    return base_url, domain, path, subdomain, domain_name, suffix
+
+
+def is_domain_only(url: str) -> bool:
+    """Return True if URL has no path segment beyond '/'."""
+    parsed = urlparse(url)
+    return not parsed.path.strip('/')

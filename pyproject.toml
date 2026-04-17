@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "LeftOvers"
-version = "1.4.3"
+dynamic = ["version"]
 description = "An advanced scanner to find residual files on web servers"
 readme = "README.md"
 authors = [
@@ -49,3 +49,6 @@ packages = ["leftovers", "leftovers.core", "leftovers.utils"]
 "leftovers" = "."
 "leftovers.core" = "core"
 "leftovers.utils" = "utils"
+
+[tool.setuptools.dynamic]
+version = {attr = "leftovers.__version__.__version__"}

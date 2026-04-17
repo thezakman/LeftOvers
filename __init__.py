@@ -6,8 +6,8 @@ control artifacts, and sensitive files that may have been accidentally
 left on web servers.
 """
 
-from .app_settings import VERSION
+from .__version__ import __version__
 
-__version__ = VERSION
+VERSION = __version__
 __author__ = "TheZakMan"
 __description__ = "Advanced scanner to find residual files on web servers"

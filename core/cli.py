@@ -23,6 +23,12 @@ from leftovers.utils.file_utils import (
     load_autosave, load_completed_urls,
 )
 
+class _HelpFormatter(argparse.RawDescriptionHelpFormatter,
+                     argparse.ArgumentDefaultsHelpFormatter):
+    """Preserves epilog newlines AND shows (default: X) for each argument."""
+    pass
+
+
 class ArgumentParserWithBanner(argparse.ArgumentParser):
     """Custom ArgumentParser that shows the banner before help"""
     
@@ -48,7 +54,15 @@ def parse_arguments():
     
     parser = ArgumentParserWithBanner(
         description="LeftOver - Advanced scanner to find residual files on web servers",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        epilog=(
+            "Examples:\n"
+            "  leftovers -u http://example.com\n"
+            "  leftovers -u http://example.com --level 3 -b --lang en\n"
+            "  leftovers -l urls.txt --workers 8 --output results.json\n"
+            "  leftovers -u http://example.com --rate-limit 5 -ra -k\n"
+            "  leftovers --resume leftovers/20260101_120000.jsonl\n"
+        ),
+        formatter_class=_HelpFormatter,
         silent_mode=silent_mode
     )
     
@@ -91,9 +105,9 @@ def parse_arguments():
     parser.add_argument("--min-size", type=int, help="Minimum content size in bytes")
     parser.add_argument("--max-size", type=int, help="Maximum content size in bytes")
     parser.add_argument(
-        '-ic', '--ignore-content', 
-        action='append', 
-        default=[], 
+        '-ic', '--ignore-content',
+        action='append',
+        default=None,
         help='Ignore results with specific content types (e.g., "text/html"). Can be used multiple times.'
     )
     parser.add_argument("--no-fp", action="store_true", help="Disable false positive detection (show all results)")
@@ -142,12 +156,14 @@ def configure_scanner_from_args(args):
     
     # Configure color usage
     use_color = not (args.no_color or os.environ.get("NO_COLOR"))
-    
-    # Update global VERBOSE setting for HTTP request logging
+
+    # Propagate verbose flag to app_settings.VERBOSE for the one consumer that
+    # still reads it (http_utils.get request logging). Keeping this as a single,
+    # localized side-effect rather than sprinkling global mutations.
     if args.verbose:
         from leftovers import app_settings
         app_settings.VERBOSE = True
-    
+
     # Configure extensions and words based on level
     from leftovers.core.helpers import get_config_by_level, get_words_by_language
     level_config = get_config_by_level(args.level)
@@ -219,7 +235,7 @@ def configure_scanner_from_args(args):
         max_content_length=args.max_size,
         rotate_user_agent=args.rotate_agents,
         test_index=args.test_index,
-        ignore_content=args.ignore_content,
+        ignore_content=args.ignore_content or [],
         disable_fp=args.no_fp,
         rate_limit=rate_limit,
         delay_ms=delay_ms
@@ -287,15 +303,21 @@ def handle_interrupt(signum, frame):
 def main():
     """Main function for the command-line interface."""
     from leftovers.utils.validators import validate_url
-    
+
     signal.signal(signal.SIGINT, handle_interrupt)
-    
+
+    args = None
+    scanner = None
     try:
         args = parse_arguments()
 
         # Validate that at least one target is provided
         if not args.url and not args.list and not args.resume:
-            parser.error("one of the arguments -u/--url -l/--list --resume is required")
+            console.print(
+                "[bold red]error:[/bold red] one of -u/--url, -l/--list, "
+                "or --resume is required"
+            )
+            sys.exit(2)
 
         # --resume alone (no -l): display saved results only
         if args.resume and not args.list and not args.url:
@@ -381,7 +403,7 @@ def main():
             export_results(scanner.results, args.output)
             
     except KeyboardInterrupt:
-        if 'scanner' in dir():
+        if scanner is not None:
             scanner.close()
             if not getattr(args, 'silent', False) and scanner.results:
                 console.print(f"[dim]Autosave: {scanner._autosave_path}[/dim]")

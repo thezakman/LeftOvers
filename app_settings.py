@@ -4,8 +4,8 @@ Global application settings for LeftOvers tool.
 
 import urllib3
 
-# Version information
-VERSION = "1.6.1"
+# Version information — single source of truth lives in __version__.py
+from leftovers.__version__ import __version__ as VERSION
 
 # General settings
 DEBUG = False

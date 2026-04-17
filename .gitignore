@@ -37,9 +37,12 @@ tmp/
 
 # LeftOvers output files
 *.json
+*.jsonl
 *.csv
 results/
 output/
+# Autosave directory written by the tool at runtime
+/leftovers/*.jsonl
 
 # Others
 .coverage

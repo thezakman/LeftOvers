@@ -3,13 +3,16 @@ Main implementation of the LeftOvers scanner - Optimized for maximum performance
 """
 
 import concurrent.futures
+import os
 from typing import Dict, List, Optional, Tuple, Any, Set
 import urllib.parse
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 import time
 import re
 import tldextract
 import threading
+
+import requests
 
 from leftovers.app_settings import VERSION
 from leftovers.core.config import (
@@ -93,9 +96,10 @@ class LeftOver:
         self.max_content_length = max_content_length
         self.ignore_content = ignore_content or []
         
-        # Set logging level based on verbose and silent flags
-        global logger
-        logger = setup_logger(verbose, silent)
+        # Configure the shared 'leftovers' logger in place. Every module that
+        # did `from ...logger import logger` gets the SAME singleton, so a
+        # setLevel/handler change here propagates without rebinding locals.
+        setup_logger(verbose, silent)
         
         # HTTP client for requests - optimized with rate limiting
         self.http_client = HttpClient(
@@ -107,22 +111,19 @@ class LeftOver:
             delay_ms=delay_ms
         )
         
-        # Optimization: use defaultdict for false positive control and size tracking
+        # False-positive state is per-URL (built via _new_fp_state) to avoid
+        # cross-URL contamination in list mode. Legacy attributes are kept as
+        # a fallback for any external callers that still expect them.
         self.error_fingerprints = defaultdict(int)
         self.baseline_responses = {}
-        self._size_frequency = defaultdict(int)
-        self._hash_frequency = defaultdict(set)
         self._main_page = None
+        self._default_fp_state = self._new_fp_state()
 
-        # Thread-safe locks for shared dictionaries (prevent race conditions)
+        # Thread-safe locks for shared collections
         self._stats_lock = threading.Lock()
         self._tested_urls_lock = threading.Lock()
-        self._size_frequency_lock = threading.Lock()
-        self._hash_frequency_lock = threading.Lock()
         self._found_urls_lock = threading.Lock()
         self._results_lock = threading.Lock()
-        # Per-thread baseline data so concurrent URL workers don't overwrite each other
-        self._thread_local = threading.local()
 
         # Autosave: write each hit to a JSONL file immediately so results
         # survive Ctrl+C or unexpected crashes.
@@ -142,8 +143,11 @@ class LeftOver:
         self.tested_urls = set()
         self.found_urls = set()
         
-        # Cache for parsed URL information
-        self._url_parse_cache = {}
+        # Bounded cache of parsed URL results. OrderedDict with LRU eviction
+        # keeps memory flat across very large list-mode scans (10K+ URLs).
+        self._url_parse_cache: "OrderedDict[str, urllib.parse.ParseResult]" = OrderedDict()
+        self._url_parse_cache_max = 1024
+        self._url_parse_cache_lock = threading.Lock()
         
         # Statistics storage
         self.stats = {
@@ -245,15 +249,18 @@ class LeftOver:
                 is_fp = getattr(scan_result, 'false_positive', False)
                 self.metrics.record_discovery(is_false_positive=is_fp, extension=extension)
 
-    def _thread_safe_add_found_url(self, url: str) -> None:
-        """
-        Thread-safe method to add a URL to the found URLs set.
+    def _thread_safe_add_found_url(self, url: str) -> bool:
+        """Atomically add a URL to the found-URLs set.
 
-        Args:
-            url: The URL to add
+        Returns True if this call inserted the URL (i.e. it's a new hit),
+        False if another thread already claimed it. Callers should skip
+        result-adding on False to avoid duplicate report entries.
         """
         with self._found_urls_lock:
+            if url in self.found_urls:
+                return False
             self.found_urls.add(url)
+            return True
 
     def _inc_stats(self, requests: int = 0, req_time: float = 0.0, hits: int = 0) -> None:
         """Thread-safe increment of scan statistics."""
@@ -262,35 +269,50 @@ class LeftOver:
             self.stats['total_time'] += req_time
             self.stats['hits'] += hits
 
+    def _new_fp_state(self, main_page=None, baseline_responses=None) -> Dict[str, Any]:
+        """Build a fresh per-URL FP-tracking state.
+
+        A URL-scoped dict keeps size/hash frequency tables and baseline data
+        isolated across concurrent list-mode workers; inner extension threads
+        share the same dict (they all belong to the same URL scan), so a
+        dedicated per-state lock serializes the short dict mutations inside
+        check_false_positive.
+        """
+        return {
+            "size_frequency": defaultdict(int),
+            "hash_frequency": defaultdict(set),
+            "main_page": main_page,
+            "baseline_responses": baseline_responses or {},
+            "lock": threading.Lock(),
+        }
+
     def _thread_safe_check_false_positive(
             self,
             result: ScanResult,
-            response_content: bytes) -> Tuple[bool, str]:
-        """
-        Thread-safe wrapper for check_false_positive.
+            response_content: bytes,
+            fp_state: Optional[Dict[str, Any]] = None) -> Tuple[bool, str]:
+        """Thread-safe wrapper for check_false_positive.
 
-        Args:
-            result: ScanResult object
-            response_content: Raw response content bytes
-
-        Returns:
-            Tuple of (is_false_positive, reason)
+        When ``fp_state`` is provided (the normal path), FP tracking is scoped
+        to a single URL, preventing cross-URL contamination in list mode.
+        ``fp_state`` falls back to the scanner's shared tables only for
+        call sites that haven't been migrated.
         """
-        # Use per-thread baseline when available (set by _process_url_without_progress)
-        # so concurrent list-mode workers don't read each other's baselines.
-        main_page = getattr(self._thread_local, 'main_page', self._main_page)
-        baseline_responses = getattr(self._thread_local, 'baseline_responses', self.baseline_responses)
-        with self._size_frequency_lock, self._hash_frequency_lock:
+        if fp_state is None:
+            fp_state = self._default_fp_state
+        lock = fp_state["lock"]
+        with lock:
             return check_false_positive(
                 result,
                 response_content,
-                baseline_responses,
-                main_page,
-                self._size_frequency,
-                self._hash_frequency
+                fp_state["baseline_responses"],
+                fp_state["main_page"],
+                fp_state["size_frequency"],
+                fp_state["hash_frequency"],
             )
 
-    def test_url(self, base_url: str, extension: str, test_type: str) -> Optional[ScanResult]:
+    def test_url(self, base_url: str, extension: str, test_type: str,
+                 fp_state: Optional[Dict[str, Any]] = None) -> Optional[ScanResult]:
         """Test a single URL with a given extension - Optimized version."""
         # Check if we are testing only a domain or a specific path efficiently
         is_domain_only = '/' not in base_url[8:] if base_url.startswith('http://') else ('/' not in base_url[9:] if base_url.startswith('https://') else False)
@@ -342,13 +364,14 @@ class LeftOver:
         
         # Test all URLs in order (prioritizing exact match)
         for url_to_test in urls_to_test:
-            result = self._test_single_url(url_to_test, extension, test_type)
+            result = self._test_single_url(url_to_test, extension, test_type, fp_state=fp_state)
             if result:
                 return result
-                
+
         return None
-        
-    def _test_single_url(self, full_url: str, extension: str, test_type: str) -> Optional[ScanResult]:
+
+    def _test_single_url(self, full_url: str, extension: str, test_type: str,
+                         fp_state: Optional[Dict[str, Any]] = None) -> Optional[ScanResult]:
         """Internal helper method to test a single URL with optimized status code handling"""
         try:
             # Record the start of the request for statistics
@@ -410,9 +433,10 @@ class LeftOver:
                 if any(ignore == content_type_base or content_type_base.startswith(f"{ignore}+") for ignore in self.ignore_content):
                     return None
             
-            # 5. Check if the URL has already been found previously
+            # 5. Fast path: skip if another thread already reported this URL.
+            # (The atomic claim happens later in _thread_safe_add_found_url.)
             if scan_result.url in self.found_urls:
-                return None  # URL already reported, ignore this result
+                return None
             
             # Flag file as large if needed
             from leftovers.app_settings import MAX_FILE_SIZE_MB, SUCCESS_STATUSES
@@ -426,244 +450,178 @@ class LeftOver:
             # 6. Finally, perform false positive check (most costly) - THREAD SAFE
             is_false_positive, reason = self._thread_safe_check_false_positive(
                 scan_result,
-                content
+                content,
+                fp_state=fp_state,
             )
             scan_result.false_positive = is_false_positive
             scan_result.false_positive_reason = reason
 
-            # Special handling for successful status codes (200, 206)
-            # These are important but we still need to respect false positive detection
-            if status_code in SUCCESS_STATUSES:
+            # Both 200/206 and non-success codes land here; the false-positive
+            # threshold differs but the report path is identical.
+            if status_code in SUCCESS_STATUSES or not is_false_positive or self.disable_fp:
                 if self.disable_fp or not is_false_positive:
+                    if not self._thread_safe_add_found_url(scan_result.url):
+                        return None  # Another thread claimed it first
                     self._inc_stats(hits=1)
-                    self._thread_safe_add_found_url(scan_result.url)
                     self._thread_safe_add_result(scan_result)
                     return scan_result
-                return None
-
-            # Non-success status codes
-            if self.disable_fp or not is_false_positive:
-                self._inc_stats(hits=1)
-                self._thread_safe_add_found_url(scan_result.url)
-                self._thread_safe_add_result(scan_result)
-                return scan_result
-
             return None
-            
-        except Exception as e:
-            # Optimized error handling with specific logging
+
+        except (requests.RequestException, OSError, ValueError) as e:
             if self.verbose:
-                error_type = type(e).__name__
-                logger.debug(f"Error testing URL {full_url}: {error_type}: {str(e)}")
+                logger.debug(f"Error testing URL {full_url}: {type(e).__name__}: {e}")
             return None
     
-    def _perform_important_extension_tests(self, target_url: str, optimized_extensions: List[str], suppress_print: bool = False) -> bool:
+    # Extensions treated as "important" get a ranged GET (first 8 KB) to
+    # avoid downloading multi-MB PDFs/archives whole before the FP check.
+    _IMPORTANT_EXTENSIONS = frozenset({
+        "pdf", "docx", "xlsx", "pptx", "zip", "rar", "tar.gz", "tar",
+    })
+
+    @staticmethod
+    def _is_domain_only(url: str) -> bool:
+        """True if URL has no path segment beyond '/'."""
+        parsed = urllib.parse.urlparse(url)
+        return not parsed.path.strip('/')
+
+    def _build_direct_url(self, target_url: str, extension: str) -> str:
+        if self._is_domain_only(target_url):
+            base = target_url if target_url.endswith('/') else target_url + '/'
+            return f"{base.rstrip('/')}/.{extension}"
+        return f"{target_url}.{extension}"
+
+    def _perform_extension_test(self, target_url: str, extension: str,
+                                suppress_print: bool = False,
+                                important: bool = False,
+                                fp_state: Optional[Dict[str, Any]] = None) -> bool:
+        """Test one extension directly against target_url. Unified replacement
+        for the two former _perform_*_extension_tests paths.
+
+        Important extensions use a ranged GET (first 8 KB) routed through
+        HttpClient so that rate limits, UA rotation, retries, and the
+        --no-ssl-verify flag are all honored.
         """
-        Perform direct tests for important file extensions (PDF, Office docs, archives).
+        direct_url = self._build_direct_url(target_url, extension)
 
-        Args:
-            target_url: The target URL to test
-            optimized_extensions: List of extensions optimized for the target
+        if self.verbose:
+            prefix = "HIGH PRIORITY: " if important else ""
+            logger.debug(f"{prefix}Testing direct URL: {direct_url}")
 
-        Returns:
-            True if any important files were found, False otherwise
-        """
-        important_extensions = ["pdf", "docx", "xlsx", "pptx", "zip", "rar", "tar.gz", "tar"]
-        important_exts_to_test = [ext for ext in optimized_extensions if ext.lower() in important_extensions]
-
-        found_files = False
-
-        for extension in important_exts_to_test:
-            # Determine if it's a domain-only URL
-            is_domain_only = '/' not in target_url[8:] if target_url.startswith('http://') else (
-                '/' not in target_url[9:] if target_url.startswith('https://') else False
-            )
-
-            if is_domain_only and not target_url.endswith('/'):
-                direct_url = f"{target_url}/.{extension}"
+        try:
+            start_time = time.time()
+            if important:
+                result = self.http_client.get(direct_url, range_bytes=(0, 8191))
             else:
-                direct_url = f"{target_url}.{extension}"
-
+                result = self.http_client.get(direct_url)
+            req_time = time.time() - start_time
+            self._inc_stats(requests=1, req_time=req_time)
+            self._track_request_latency(req_time)
+        except (requests.RequestException, OSError) as e:
             if self.verbose:
-                logger.debug(f"HIGH PRIORITY: Testing direct URL for important file: {direct_url}")
-
-            try:
-                import requests
-                start_time = time.time()
-
-                headers = self.http_client.session.headers.copy()
-                headers['Range'] = 'bytes=0-8191'
-
-                with requests.Session() as special_session:
-                    special_session.verify = False
-                    response = special_session.get(
-                        direct_url,
-                        headers=headers,
-                        timeout=self.timeout,
-                        allow_redirects=True
-                    )
-
-                req_time = time.time() - start_time
-                self._inc_stats(requests=1, req_time=req_time)
-
-                if response.status_code in [200, 206]:
-                    content_type = response.headers.get('Content-Type', 'Unknown')
-                    content_type_base = content_type.split(';')[0].strip()
-
-                    if self.ignore_content and any(ignore == content_type_base for ignore in self.ignore_content):
-                        if self.verbose:
-                            logger.debug(f"Ignoring result with filtered content type: {content_type_base}")
-                        continue
-
-                    if 'Content-Length' in response.headers:
-                        try:
-                            content_length = int(response.headers['Content-Length'])
-                        except (ValueError, TypeError):
-                            content_length = len(response.content) if response.content else 0
-                    else:
-                        content_length = len(response.content) if response.content else 0
-
-                    scan_result = ScanResult(
-                        url=direct_url,
-                        status_code=response.status_code,
-                        content_type=content_type,
-                        content_length=content_length,
-                        response_time=req_time,
-                        test_type="Direct URL",
-                        extension=extension
-                    )
-
-                    is_false_positive, reason = self._thread_safe_check_false_positive(
-                        scan_result,
-                        response.content
-                    )
-                    scan_result.false_positive = is_false_positive
-                    scan_result.false_positive_reason = reason
-
-                    if self.disable_fp or not is_false_positive:
-                        self._inc_stats(hits=1)
-                        self._thread_safe_add_found_url(direct_url)
-                        self._thread_safe_add_result(scan_result)
-                        found_files = True
-
-                        if not self.silent and not suppress_print:
-                            format_and_print_result(console, scan_result, self.use_color, self.verbose, self.silent)
-
-            except Exception as e:
-                if self.verbose:
-                    error_type = type(e).__name__
-                    logger.debug(f"Error testing important file {direct_url}: {error_type}: {str(e)}")
-
-        return found_files
-
-    def _perform_direct_extension_tests(self, target_url: str, optimized_extensions: List[str], suppress_print: bool = False) -> bool:
-        """
-        Perform direct tests for non-important extensions.
-
-        Args:
-            target_url: The target URL to test
-            optimized_extensions: List of extensions optimized for the target
-
-        Returns:
-            True if any files were found, False otherwise
-        """
-        if len(optimized_extensions) > 5:
+                logger.debug(f"Error testing {direct_url}: {type(e).__name__}: {e}")
             return False
 
-        important_extensions = ["pdf", "docx", "xlsx", "pptx", "zip", "rar", "tar.gz", "tar"]
-        found_files = False
+        if not result.get("success"):
+            return False
 
-        for extension in optimized_extensions:
-            if extension.lower() in important_extensions:
-                continue
+        response = result["response"]
+        status_code = response.status_code
 
-            is_domain_only = '/' not in target_url[8:] if target_url.startswith('http://') else (
-                '/' not in target_url[9:] if target_url.startswith('https://') else False
-            )
+        # Non-success codes are ignored by the direct test — the regular
+        # extension loop still covers them via test_url().
+        if status_code not in (200, 206):
+            return False
 
-            if is_domain_only and not target_url.endswith('/'):
-                direct_url = f"{target_url}/.{extension}"
-            else:
-                direct_url = f"{target_url}.{extension}"
-
+        content_type = response.headers.get('Content-Type', 'N/A')
+        content_type_base = content_type.split(';')[0].strip()
+        if self.ignore_content and any(
+            ignore == content_type_base or content_type_base.startswith(f"{ignore}+")
+            for ignore in self.ignore_content
+        ):
             if self.verbose:
-                logger.debug(f"Testing direct URL: {direct_url}")
+                logger.debug(f"Ignoring {direct_url}: filtered content type {content_type_base}")
+            return False
 
+        content = response.content or b""
+        content_length = self._extract_content_length(response, content)
+
+        scan_result = ScanResult(
+            url=direct_url,
+            status_code=status_code,
+            content_type=content_type,
+            content_length=content_length,
+            response_time=result.get("time", req_time),
+            test_type="Direct URL",
+            extension=extension,
+        )
+
+        is_fp, reason = self._thread_safe_check_false_positive(
+            scan_result, content, fp_state=fp_state,
+        )
+        scan_result.false_positive = is_fp
+        scan_result.false_positive_reason = reason
+
+        if is_fp and not self.disable_fp:
+            return False
+
+        if not self._thread_safe_add_found_url(direct_url):
+            return False  # Another thread already reported this URL
+
+        self._inc_stats(hits=1)
+        self._thread_safe_add_result(scan_result)
+
+        if not self.silent and not suppress_print:
+            format_and_print_result(console, scan_result, self.use_color, self.verbose, self.silent)
+        return True
+
+    @staticmethod
+    def _extract_content_length(response, content: bytes) -> int:
+        raw = response.headers.get('Content-Length') if hasattr(response, 'headers') else None
+        if raw:
             try:
-                start_time = time.time()
-                result = self.http_client.get(direct_url)
-                req_time = time.time() - start_time
-                self._inc_stats(requests=1, req_time=req_time)
+                return int(raw)
+            except (ValueError, TypeError):
+                pass
+        return len(content) if content else 0
 
-                if result["success"]:
-                    response = result["response"]
-                    response_time = result["time"]
+    def _perform_important_extension_tests(self, target_url: str,
+                                           optimized_extensions: List[str],
+                                           suppress_print: bool = False,
+                                           fp_state: Optional[Dict[str, Any]] = None) -> bool:
+        """Test "important" extensions (PDF, Office, archives) with a ranged GET."""
+        found = False
+        for ext in optimized_extensions:
+            if ext.lower() in self._IMPORTANT_EXTENSIONS:
+                if self._perform_extension_test(target_url, ext, suppress_print,
+                                                important=True, fp_state=fp_state):
+                    found = True
+        return found
 
-                    status_code = response.status_code
-                    headers = response.headers
-                    content_type = headers.get('Content-Type', 'N/A')
-
-                    content_type_base = content_type.split(';')[0].strip()
-                    if self.ignore_content and any(ignore == content_type_base for ignore in self.ignore_content):
-                        if self.verbose:
-                            logger.debug(f"Ignoring direct URL result with filtered content type: {content_type_base}")
-                        continue
-
-                    content = response.content
-
-                    if 'Content-Length' in response.headers:
-                        try:
-                            content_length = int(response.headers['Content-Length'])
-                        except (ValueError, TypeError):
-                            content_length = len(content) if content else 0
-                    else:
-                        content_length = len(content) if content else 0
-
-                    scan_result = ScanResult(
-                        url=direct_url,
-                        status_code=status_code,
-                        content_type=content_type,
-                        content_length=content_length,
-                        response_time=response_time,
-                        test_type="Direct URL",
-                        extension=extension
-                    )
-
-                    if status_code == 200 or status_code == 206:
-                        is_false_positive, reason = self._thread_safe_check_false_positive(
-                            scan_result,
-                            content
-                        )
-                        scan_result.false_positive = is_false_positive
-                        scan_result.false_positive_reason = reason
-
-                        if self.disable_fp or not is_false_positive:
-                            self._inc_stats(hits=1)
-                            self._thread_safe_add_found_url(direct_url)
-                            self._thread_safe_add_result(scan_result)
-                            found_files = True
-
-                            if not self.silent and not suppress_print:
-                                format_and_print_result(console, scan_result, self.use_color, self.verbose, self.silent)
-
-            except Exception as e:
-                if self.verbose:
-                    error_type = type(e).__name__
-                    logger.debug(f"Error in direct test: {direct_url}: {error_type}: {str(e)}")
-
-        return found_files
+    def _perform_direct_extension_tests(self, target_url: str,
+                                        optimized_extensions: List[str],
+                                        suppress_print: bool = False,
+                                        fp_state: Optional[Dict[str, Any]] = None) -> bool:
+        """Test non-important extensions directly. Limited to small extension
+        sets (<=5) since the regular extension loop covers everything else."""
+        if len(optimized_extensions) > 5:
+            return False
+        found = False
+        for ext in optimized_extensions:
+            if ext.lower() in self._IMPORTANT_EXTENSIONS:
+                continue
+            if self._perform_extension_test(target_url, ext, suppress_print,
+                                            important=False, fp_state=fp_state):
+                found = True
+        return found
 
     def process_url(self, target_url: str):
-        """Process a URL, testing all extensions on all derived targets - Optimized version."""
-        # Record the start time for statistics
+        """Process a URL, testing all extensions on all derived targets."""
         self.stats['start_time'] = time.time()
 
-        # Optimize extensions based on target context
         optimized_extensions = self.extension_optimizer.optimize_extensions(
             self.extensions, target_url
         )
-        
-        # Always show target information, even in silent mode
+
         if self.use_color:
             console.rule(f"[bold blue]Target: {target_url}[/bold blue]", style="blue")
         else:
@@ -671,23 +629,18 @@ class LeftOver:
             print("\n" + "-" * len(title))
             print(title)
             print("-" * len(title))
-        
-        # Debug: check URL segments before processing
+
         if self.verbose:
             from leftovers.utils.debug_utils import debug_url_segments
             debug_url_segments(target_url)
 
-        # Perform important extension tests (PDF, Office docs, archives)
-        self._perform_important_extension_tests(target_url, optimized_extensions)
+        # Per-URL FP state isolates size/hash frequency tables and baselines
+        # so a later list-mode run cannot corrupt them.
+        fp_state = self._new_fp_state()
 
-        # Perform direct extension tests for other extensions
-        self._perform_direct_extension_tests(target_url, optimized_extensions)
-        
-        # Reset size tracker for this target
-        self._size_frequency = defaultdict(int)
-        self._hash_frequency = defaultdict(set)
+        self._perform_important_extension_tests(target_url, optimized_extensions, fp_state=fp_state)
+        self._perform_direct_extension_tests(target_url, optimized_extensions, fp_state=fp_state)
 
-        # Enhance backup words with domain-based wordlist if enabled
         enhanced_backup_words = self.backup_words
         if hasattr(self, 'domain_wordlist') and self.domain_wordlist and self.brute_mode:
             if self.verbose:
@@ -698,16 +651,19 @@ class LeftOver:
             if self.verbose:
                 logger.info(f"Wordlist enhanced: {len(self.backup_words)} -> {len(enhanced_backup_words)} words")
 
-        # Generate base URLs for testing - using the optimized version of generate_test_urls
-        test_urls, self._main_page, self.baseline_responses = generate_test_urls(
+        test_urls, main_page, baseline = generate_test_urls(
             self.http_client,
             target_url,
             self.brute_mode,
             enhanced_backup_words,
             self.verbose,
             self.brute_recursive,
-            self.domain_wordlist
+            self.domain_wordlist,
         )
+        fp_state["main_page"] = main_page
+        fp_state["baseline_responses"] = baseline or {}
+        self._main_page = main_page
+        self.baseline_responses = baseline or {}
         
         if not test_urls:
             return
@@ -753,33 +709,35 @@ class LeftOver:
                 for batch in url_batches:
                     # Parallel tests for each URL in the current batch
                     with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-                        # Create mapping of futures to arguments
                         futures = {}
                         for base_url in batch:
-                            # Critical-specific files should NEVER have extensions added
-                            # These are exact filenames that we want to test as-is
                             if test_type == "critical-specific":
-                                future = executor.submit(self._test_single_url, base_url, "", test_type)
+                                future = executor.submit(
+                                    self._test_single_url, base_url, "", test_type,
+                                    fp_state,
+                                )
                                 futures[future] = (base_url, "")
                                 continue
-                            
-                            # Check if URL already has an extension (from domain wordlist generation)
-                            url_path = base_url.split('/')[-1]  # Get the last part of the URL
-                            has_extension = False
 
+                            url_path = base_url.split('/')[-1]
+                            has_extension = False
                             if '.' in url_path:
                                 parts = url_path.split('.')
                                 if len(parts) >= 2 and 2 <= len(parts[-1]) <= 5 and parts[-1].isalnum():
                                     has_extension = True
 
                             if has_extension:
-                                # URL already has extension, test it directly without adding more extensions
-                                future = executor.submit(self._test_single_url, base_url, "", test_type)
+                                future = executor.submit(
+                                    self._test_single_url, base_url, "", test_type,
+                                    fp_state,
+                                )
                                 futures[future] = (base_url, "")
                             else:
-                                # For each URL without extension, test all extensions in parallel
                                 for ext in optimized_extensions:
-                                    future = executor.submit(self.test_url, base_url, ext, test_type)
+                                    future = executor.submit(
+                                        self.test_url, base_url, ext, test_type,
+                                        fp_state,
+                                    )
                                     futures[future] = (base_url, ext)
                         
                         # Process results as they are completed
@@ -905,15 +863,17 @@ class LeftOver:
             print(f"  Avg req time: {avg_req_time*1000:.2f} ms")
     
     def _get_display_url(self, base_url: str, test_type: str) -> str:
-        """
-        Returns the appropriate representation of the URL being tested based on the test type - optimized version.
-        """
-        # Use parsed URL cache to avoid repetitive processing
-        if base_url in self._url_parse_cache:
-            parsed = self._url_parse_cache[base_url]
-        else:
-            parsed = urllib.parse.urlparse(base_url)
-            self._url_parse_cache[base_url] = parsed
+        """Return a display representation of the URL for the given test type."""
+        with self._url_parse_cache_lock:
+            cached = self._url_parse_cache.get(base_url)
+            if cached is not None:
+                self._url_parse_cache.move_to_end(base_url)
+                parsed = cached
+            else:
+                parsed = urllib.parse.urlparse(base_url)
+                self._url_parse_cache[base_url] = parsed
+                if len(self._url_parse_cache) > self._url_parse_cache_max:
+                    self._url_parse_cache.popitem(last=False)
         
         # Optimization: avoid unnecessary split operations using pattern matching first
         match_segment = SEGMENT_PATTERN.search(test_type)
@@ -1287,16 +1247,20 @@ class LeftOver:
             debug_url_segments(target_url)
 
         in_list_mode = shared_progress is not None
-        self._perform_important_extension_tests(target_url, optimized_extensions, suppress_print=in_list_mode)
-        self._perform_direct_extension_tests(target_url, optimized_extensions, suppress_print=in_list_mode)
 
-        # Only reset frequency trackers in single-URL mode; in list mode concurrent
-        # workers share these dicts and resetting mid-scan corrupts other threads.
-        if not in_list_mode:
-            with self._size_frequency_lock:
-                self._size_frequency = defaultdict(int)
-            with self._hash_frequency_lock:
-                self._hash_frequency = defaultdict(set)
+        # Each URL gets its own FP state (defaultdicts + baselines), so
+        # concurrent URL workers in list mode can never contaminate each
+        # other's size/hash frequency tables or baseline references.
+        fp_state = self._new_fp_state()
+
+        self._perform_important_extension_tests(
+            target_url, optimized_extensions,
+            suppress_print=in_list_mode, fp_state=fp_state,
+        )
+        self._perform_direct_extension_tests(
+            target_url, optimized_extensions,
+            suppress_print=in_list_mode, fp_state=fp_state,
+        )
 
         enhanced_backup_words = self.backup_words
         if hasattr(self, 'domain_wordlist') and self.domain_wordlist and self.brute_mode:
@@ -1315,13 +1279,12 @@ class LeftOver:
             enhanced_backup_words,
             self.verbose,
             self.brute_recursive,
-            self.domain_wordlist
+            self.domain_wordlist,
         )
-        # Store per-thread baseline so concurrent workers don't overwrite each other
-        self._thread_local.main_page = local_main_page
-        self._thread_local.baseline_responses = local_baseline
+        fp_state["main_page"] = local_main_page
+        fp_state["baseline_responses"] = local_baseline or {}
         self._main_page = local_main_page
-        self.baseline_responses = local_baseline
+        self.baseline_responses = local_baseline or {}
 
         if not test_urls:
             elapsed = time.time() - scan_start
@@ -1357,14 +1320,15 @@ class LeftOver:
 
             found_in_group = False
             for batch in url_batches:
-                # Inner pool for extension testing within this URL.
-                # Uses self.max_workers (-t) regardless of list vs single mode.
                 inner_workers = self.max_workers
                 with concurrent.futures.ThreadPoolExecutor(max_workers=inner_workers) as executor:
                     futures = {}
                     for base_url in batch:
                         if test_type == "critical-specific":
-                            future = executor.submit(self._test_single_url, base_url, "", test_type)
+                            future = executor.submit(
+                                self._test_single_url, base_url, "", test_type,
+                                fp_state,
+                            )
                             futures[future] = (base_url, "")
                         else:
                             url_path = base_url.split('/')[-1]
@@ -1374,11 +1338,17 @@ class LeftOver:
                                 and url_path.split('.')[-1].isalnum()
                             )
                             if has_ext:
-                                future = executor.submit(self._test_single_url, base_url, "", test_type)
+                                future = executor.submit(
+                                    self._test_single_url, base_url, "", test_type,
+                                    fp_state,
+                                )
                                 futures[future] = (base_url, "")
                             else:
                                 for ext in optimized_extensions:
-                                    future = executor.submit(self.test_url, base_url, ext, test_type)
+                                    future = executor.submit(
+                                        self.test_url, base_url, ext, test_type,
+                                        fp_state,
+                                    )
                                     futures[future] = (base_url, ext)
 
                     for future in concurrent.futures.as_completed(futures):
@@ -1418,19 +1388,17 @@ class LeftOver:
         """Export specific results for a URL."""
         from urllib.parse import urlparse
         from leftovers.utils.file_utils import export_results
-        
-        # Create filename based on the URL efficiently
+
         parsed = urlparse(url)
         domain = parsed.netloc.replace(':', '_')
         path = parsed.path.replace('/', '_').strip('_')
-        
-        if path:
-            filename = f"{self.output_file.split('.')[0]}_{domain}_{path}.json"
-        else:
-            filename = f"{self.output_file.split('.')[0]}_{domain}.json"
-        
+
+        stem, ext = os.path.splitext(self.output_file or 'results.json')
+        ext = ext or '.json'
+        suffix = f"_{domain}_{path}" if path else f"_{domain}"
+        filename = f"{stem}{suffix}{ext}"
+
         export_results(self.results, filename)
-        
         if not self.silent:
             logger.info(f"Results for {url} exported to {filename}")
     
@@ -1477,10 +1445,3 @@ class LeftOver:
                 console.print(f"[dim]Autosave: {self._autosave_path}[/dim]")
             else:
                 print(f"Autosave: {self._autosave_path}")
-    
-    def run(self):
-        """Run the scanner with the current settings - optimized version."""
-        # Clear tracking sets when starting a new scan
-        self.tested_urls.clear()
-        self.found_urls.clear()
-        self._url_parse_cache.clear()  # Clear parsed URL cache

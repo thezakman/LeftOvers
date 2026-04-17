@@ -11,7 +11,7 @@ from functools import lru_cache
 import tldextract
 
 from leftovers.utils.logger import logger
-from leftovers.utils.http_utils import parse_url
+from leftovers.utils.http_utils import parse_url, parse_url_full
 from leftovers.utils.domain_generator import DomainWordlistGenerator
 from leftovers.core.detection import establish_baseline, perform_sanity_check
 # Compile IP pattern only once for reuse
@@ -59,21 +59,13 @@ def generate_test_urls(
         verbose: bool = False,
         brute_recursive: bool = False,
         domain_wordlist: bool = False) -> Tuple[List[Tuple[str, str]], Dict, Dict]:
-    """Generate URLs to be tested based on the target URL - Optimized version."""
-    # Parse URL returns (base_url, domain, path)
-    base_url, domain, path = parse_url(target_url)
-    
-    # Extract URL components using urllib.parse
+    """Generate URLs to be tested based on the target URL."""
+    # Single tldextract call for base_url + domain + path + tld parts.
+    base_url, domain, path, subdomain, domain_name, suffix = parse_url_full(target_url)
+
     parsed = urllib.parse.urlparse(target_url)
     scheme = parsed.scheme or "http"
     hostname = parsed.netloc
-    
-    # Extract subdomain and domain using tldextract
-    extracted = tldextract.extract(target_url)
-    subdomain = extracted.subdomain
-    domain_name = extracted.domain
-    suffix = extracted.suffix
-    
     full_hostname = hostname
     
     # Detect if the hostname is an IP address - using cache

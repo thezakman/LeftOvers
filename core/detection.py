@@ -4,25 +4,23 @@ Functions for detection of false positives and baseline establishment.
 
 import re
 import random
-import hashlib
 import difflib
 from typing import Dict, Tuple, Any, Set
-import sys
 
 from leftovers.core.result import ScanResult
 from leftovers.utils.logger import logger
+from leftovers.utils.http_utils import calculate_content_hash, HttpClient
 
-# Safe import of http_utils - try/except pattern to handle import errors
-try:
-    from leftovers.utils.http_utils import calculate_content_hash, HttpClient
-except ImportError as e:
-    # Define fallback functions if imports fail
-    def calculate_content_hash(content):
-        if not content:
-            return "empty"
-        return hashlib.md5(content).hexdigest()
-        
-    print(f"Warning: Failed to import from http_utils: {str(e)}. Using fallback implementation.")
+# ── False-positive detection thresholds ─────────────────────────────────────
+# Success responses (200/206) need strong evidence before being flagged,
+# error responses can be flagged with weaker signals.
+FP_THRESHOLD_SUCCESS = 0.9          # text-similarity threshold for 200/206
+FP_THRESHOLD_ERROR = 0.7            # text-similarity threshold for 4xx/5xx
+FP_MAIN_PAGE_SIZE_RATIO = 0.97      # size ratio vs main page flagged as "same content"
+FP_TEXT_SIMILARITY_HIGH = 0.95      # text similarity threshold for main-page match
+FP_MIN_EXTENSIONS_FOR_GENERIC = 3   # same hash across >= N different extensions -> generic
+FP_ERROR_IMAGE_MAX_SIZE = 150_000   # image below this AND repeated = error image
+FP_REAL_IMAGE_MIN_SIZE = 100_000    # image above this = likely real content
 
 def establish_baseline(http_client: HttpClient, base_url: str, verbose: bool = False):
     """
@@ -233,14 +231,11 @@ def check_false_positive(
     if result.status_code == 404:
         return True, "404 responses are typically not residual files"
     
-    # Special treatment for success status codes (200, 206)
+    # Success codes need stronger evidence; error codes can be flagged sooner.
     if result.status_code in SUCCESS_STATUSES:
-        # For 200/206 responses, only mark as false positive if strong evidence exists
-        # We want to be more conservative with these status codes
-        false_positive_threshold = 0.9  # Higher threshold for certainty (90%)
+        false_positive_threshold = FP_THRESHOLD_SUCCESS
     else:
-        # For other status codes, we can be more aggressive in marking false positives
-        false_positive_threshold = 0.7  # Lower threshold (70%)
+        false_positive_threshold = FP_THRESHOLD_ERROR
     
     # Track identical response sizes by status code with more specific key
     size_key = f"{result.status_code}:{result.content_length}:{result.content_type.split(';')[0]}"
@@ -249,7 +244,7 @@ def check_false_positive(
     size_frequency[size_key] += 1
 
     # Check if same content hash is returned for multiple different file extensions
-    if len(hash_frequency[content_hash]) >= 3:
+    if len(hash_frequency[content_hash]) >= FP_MIN_EXTENSIONS_FOR_GENERIC:
         # Extract file extensions from URLs with this hash
         extensions = set()
         base_filenames = set()
@@ -266,7 +261,7 @@ def check_false_positive(
 
         # If we have the same content for 3+ different extensions, it's likely a generic response
         # UNLESS it's a critical/specific file (certificate, .env, etc) - these should NEVER be marked as FP
-        if len(extensions) >= 3:
+        if len(extensions) >= FP_MIN_EXTENSIONS_FOR_GENERIC:
             # Check if any of the base filenames are critical files
             from leftovers.core.config import CRITICAL_SPECIFIC_FILES, SPECIFIC_FILES
             critical_files = {f.lower().split('.')[0] for f in CRITICAL_SPECIFIC_FILES}
@@ -280,8 +275,8 @@ def check_false_positive(
                 # Check if it's a generic error image (GIF, PNG, JPG that repeats for many extensions)
                 is_error_image = (
                     any(ct in result.content_type.lower() for ct in ['image/gif', 'image/png', 'image/jpeg', 'image/jpg'])
-                    and result.content_length < 150000  # Less than 150KB
-                    and len(extensions) >= 3  # Repeats for 3+ extensions (reduced from 4)
+                    and result.content_length < FP_ERROR_IMAGE_MAX_SIZE
+                    and len(extensions) >= FP_MIN_EXTENSIONS_FOR_GENERIC
                 )
                 
                 if is_error_image:
@@ -345,18 +340,18 @@ def check_false_positive(
                 size_ratio = min(result.content_length, main_page["size"]) / max(result.content_length, main_page["size"])
                 
                 # Content type must match and size must be very similar to consider a false positive
-                if size_ratio > 0.97 and result.content_type == main_page.get("content_type"):
+                if size_ratio > FP_MAIN_PAGE_SIZE_RATIO and result.content_type == main_page.get("content_type"):
                     return True, "Response very similar to main page (likely same content with small variations)"
-                
+
                 # For text responses with similar size, compare content
                 if size_ratio > 0.8 and result.content_type == main_page.get("content_type") and text_content:
                     main_text = main_page.get("text_content", "")
-                    
+
                     if main_text:
                         similarity = _compute_text_similarity(text_content, main_text)
-                        
+
                         # Very high similarity to main page = likely not a different file
-                        if similarity > 0.95:  # 95% similarity threshold for 200/206
+                        if similarity > FP_TEXT_SIMILARITY_HIGH:
                             return True, f"Response text is {similarity:.0%} similar to main page content"
 
     # Special case for binary content like PDFs, certificates, keys - much less likely to be false positives
@@ -371,20 +366,17 @@ def check_false_positive(
             # Binary content with success code is very likely a real file
             # ESPECIALLY certificates, keys, and other security-related files
             return False, ""
-        
-        # Special handling for images - only consider real if unique or large
+
+        # Images: large ones are usually real; small ones that repeat are errors.
         is_image = 'image/' in result.content_type.lower()
         if is_image:
-            # Large images are likely real files
-            if result.content_length > 100000:  # > 100KB
+            if result.content_length > FP_REAL_IMAGE_MIN_SIZE:
                 return False, ""
-            # Small/medium images that repeat for multiple files are likely error pages
-            # For very small images (< 10KB), be more aggressive (2+ occurrences)
-            # For medium images (10KB-100KB), require 3+ occurrences
-            threshold = 2 if result.content_length < 10000 else 3
+            # Very small images (< 10KB): 2+ repeats is suspicious.
+            # Medium images (10KB-100KB): need 3+ repeats.
+            threshold = 2 if result.content_length < 10000 else FP_MIN_EXTENSIONS_FOR_GENERIC
             if size_frequency[size_key] >= threshold:
                 return True, f"Generic error image ({result.content_length:,} bytes) returned for multiple files"
-            # This is also handled above in the extension check
 
     # Check for SPA (Single Page Application) fallback behavior
     if result.status_code in SUCCESS_STATUSES and response_content:
