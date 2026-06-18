@@ -236,6 +236,9 @@ def get_config_by_level(level: int = 2) -> dict:
             "extensions": [
                 *CRITICAL_BACKUP_EXTENSIONS,
                 *CONFIG_LOG_EXTENSIONS,
+                # Common compressed archives — the #1 leftover/backup format
+                # (site.zip, backup.rar, db.tar.gz). Worth covering by default.
+                "zip", "rar", "tar", "gz", "tgz", "7z", "tar.gz",
                 *SECURITY_EXTENSIONS[:20],
                 *DATABASE_EXTENSIONS[:10],
                 *CONFIG_EXTENSIONS[:15],

@@ -227,26 +227,72 @@ def _format_content_type(content_type):
     """Helper function to format and simplify content type strings."""
     if not content_type:
         return "Unknown"
-        
+
     # Remove parameters like charset
     if ";" in content_type:
         content_type = content_type.split(";")[0].strip()
-        
+
     # Abbreviate common types for cleaner display
     common_types = {
         "text/html": "HTML",
         "text/plain": "Text",
         "application/json": "JSON",
         "application/xml": "XML",
+        "text/xml": "XML",
         "application/javascript": "JavaScript",
+        "application/x-javascript": "JavaScript",
         "text/css": "CSS",
         "application/pdf": "PDF",
         "image/jpeg": "JPEG",
         "image/png": "PNG",
-        "image/gif": "GIF"
+        "image/gif": "GIF",
+        # Binary / archive / data types that otherwise truncate to noise
+        # like "application/oct" or "application/x-s".
+        "application/octet-stream": "Binary",
+        "application/zip": "ZIP",
+        "application/x-rar-compressed": "RAR",
+        "application/x-tar": "TAR",
+        "application/gzip": "GZIP",
+        "application/x-gzip": "GZIP",
+        "application/x-7z-compressed": "7z",
+        "application/sql": "SQL",
+        "application/x-sql": "SQL",
+        "text/x-sql": "SQL",
+        "application/x-sh": "Shell",
+        "text/x-php": "PHP",
+        "application/x-httpd-php": "PHP",
+        "text/x-python": "Python",
+        "text/yaml": "YAML",
+        "text/x-yaml": "YAML",
     }
-    
+
     return common_types.get(content_type, content_type)
+
+
+def shorten_url(url: str, max_len: int) -> str:
+    """Shorten a URL while preserving its filename (the most useful part).
+
+    Drops the scheme first, then collapses the middle of the path with an
+    ellipsis so the trailing filename (e.g. ``database.sql``) stays visible —
+    unlike a plain right-truncation that hides exactly what was found.
+    """
+    if max_len <= 1 or len(url) <= max_len:
+        return url
+
+    # Strip scheme (http:// or https://) to reclaim space.
+    stripped = re.sub(r'^https?://', '', url)
+    if len(stripped) <= max_len:
+        return stripped
+
+    ell = "…"
+    # Always keep the filename (last path segment) intact if possible.
+    tail = stripped.rsplit('/', 1)[-1]
+    if len(tail) + 2 >= max_len:
+        # Filename alone fills the budget: keep its tail.
+        return ell + tail[-(max_len - 1):]
+
+    head_budget = max_len - len(tail) - 1  # space for head + ellipsis
+    return f"{stripped[:head_budget]}{ell}/{tail}"
 
 def print_summary(found_count, total_count, use_color=True):
     """Print a summary of the scan."""
@@ -333,8 +379,9 @@ def format_and_print_result(console, result, use_color=True, verbose=False, sile
         # For narrow terminals, use more compact formatting
         if terminal_width < 100:
             # Create a more compact format for narrow terminals
-            # Abbreviate some parts to save space
-            compact_details = f"({result.content_type.split(';')[0][:15]}, "
+            # Abbreviate content type (e.g. application/octet-stream -> Binary)
+            # instead of a raw 15-char cut that produced "application/oct".
+            compact_details = f"({_format_content_type(result.content_type)}, "
 
             # Format size more compactly
             if hasattr(result, 'content_length'):

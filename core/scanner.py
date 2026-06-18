@@ -788,10 +788,9 @@ class LeftOver:
         
         # Record end time for statistics
         self.stats['end_time'] = time.time()
-        
-        # Display performance statistics if verbose
-        if self.verbose:
-            self._display_performance_stats()
+
+        # Always show a compact perf summary (full breakdown in verbose mode)
+        self._display_performance_stats()
     
     def _display_test_type_header(self, test_type: str, example_url: str):
         """Display header for the current test type - optimized format."""
@@ -857,32 +856,49 @@ class LeftOver:
                 print(f"Testing: {test_type} ({url_display})")
     
     def _display_performance_stats(self):
-        """Display performance statistics of the execution."""
+        """Display performance statistics of the execution.
+
+        Shows a compact one-line summary by default (so the user always sees
+        how many requests ran and how long it took), and the full breakdown
+        only in verbose mode.
+        """
         if self.silent:
             return
-            
+
         total_time = self.stats['end_time'] - self.stats['start_time']
         req_time = self.stats['total_time']
-        
+        requests = self.stats['requests']
+        hits = self.stats['hits']
+
         # Calculate average time per request
-        avg_req_time = req_time / self.stats['requests'] if self.stats['requests'] > 0 else 0
-        
+        avg_req_time = req_time / requests if requests > 0 else 0
+
         # Calculate requests per second
-        rps = self.stats['requests'] / total_time if total_time > 0 else 0
-        
+        rps = requests / total_time if total_time > 0 else 0
+
+        if not self.verbose:
+            # Compact single line: the essentials, always shown.
+            summary = (f"{requests:,} requests in {total_time:.1f}s "
+                       f"({rps:,.0f} req/s) · {hits} hit{'s' if hits != 1 else ''}")
+            if self.use_color:
+                console.print(f"[dim]⏱  {summary}[/dim]")
+            else:
+                print(f"Stats: {summary}")
+            return
+
         if self.use_color:
             console.print()
             console.print("[bold cyan]Performance Statistics:[/bold cyan]")
             console.print(f"  Total time: {total_time:.2f} seconds")
-            console.print(f"  Requests: {self.stats['requests']}")
-            console.print(f"  Hits: {self.stats['hits']}")
+            console.print(f"  Requests: {requests:,}")
+            console.print(f"  Hits: {hits}")
             console.print(f"  Req/second: {rps:.2f}")
             console.print(f"  Avg req time: {avg_req_time*1000:.2f} ms")
         else:
             print("\nPerformance Statistics:")
             print(f"  Total time: {total_time:.2f} seconds")
-            print(f"  Requests: {self.stats['requests']}")
-            print(f"  Hits: {self.stats['hits']}")
+            print(f"  Requests: {requests:,}")
+            print(f"  Hits: {hits}")
             print(f"  Req/second: {rps:.2f}")
             print(f"  Avg req time: {avg_req_time*1000:.2f} ms")
     

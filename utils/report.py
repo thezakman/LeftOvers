@@ -90,9 +90,10 @@ def generate_summary_report(results: List[ScanResult], console: Console, use_col
     table.add_column("Value", style="magenta" if use_color else "", justify="right")
     table.add_column("Notes", style="dim" if use_color else "")
     
-    table.add_row("Total Tests", str(len(results)), "")
+    table.add_row("Total Results", str(len(results)),
+                  "(non-404 responses collected)")
     table.add_row(
-        "Files Found", 
+        "Files Found",
         str(len(interesting)),
         f"(Excluding {fp_counts} false positives)"
     )
@@ -182,30 +183,31 @@ def generate_top_findings_report(results: List[ScanResult], console: Console):
         console.print("[dim italic]No significant findings to display.[/dim italic]")
         return
     
-    # Create a results table with better styling
+    # Create a results table with better styling. The URL column keeps the
+    # filename visible (left-collapsing) since that's the actual finding.
+    from leftovers.utils.console import shorten_url, _format_content_type
+
     results_table = Table(show_header=True, header_style="bold", border_style="bright_black")
     results_table.add_column("#", style="dim", width=3, justify="center")
-    results_table.add_column("URL", style="bold white", no_wrap=False, max_width=80)
+    results_table.add_column("URL", style="bold white", no_wrap=True)
     results_table.add_column("Status", justify="center", width=8)
     results_table.add_column("Size", justify="right", width=12)
-    results_table.add_column("Type", width=20)
-    
+    results_table.add_column("Type", width=12)
+
     for idx, result in enumerate(top_results, 1):
         # Use proper style based on status code with more distinctive colors
         status_style = _get_status_style(result.status_code)
         status_text = f"[{status_style}]{result.status_code}[/{status_style}]"
-        
+
         # Format content size with appropriate units for better readability
         size_text = format_size(result.content_length)
-        
-        # Format content type more clearly
-        content_type = result.content_type.split(';')[0] if result.content_type else "N/A"
-        
-        # Truncate URL if it's too long
-        url_display = result.url
-        if len(url_display) > 80:
-            url_display = url_display[:77] + "..."
-            
+
+        # Format content type more clearly (abbreviated)
+        content_type = _format_content_type(result.content_type) if result.content_type else "N/A"
+
+        # Shorten URL while preserving the filename
+        url_display = shorten_url(result.url, 70)
+
         results_table.add_row(
             str(idx),
             url_display,
@@ -217,8 +219,8 @@ def generate_top_findings_report(results: List[ScanResult], console: Console):
     console.print(results_table)
     
     # Add a helpful guide about the findings
-    console.print("[bright][Status colors]: [green]200/206 OK[/green], [yellow]403/401 Protected[/yellow], "
-                 "[red]Error[/red], [blue]Other[/blue][/bright]\n")
+    console.print("[dim]Status colors:[/dim] [green]200/206 OK[/green], [yellow]403/401 Protected[/yellow], "
+                 "[red]Error[/red], [blue]Other[/blue]\n")
 
 def _is_interesting_content_type(content_type: str) -> bool:
     """
