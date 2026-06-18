@@ -291,7 +291,7 @@ def shorten_url(url: str, max_len: int) -> str:
         # Filename alone fills the budget: keep its tail.
         return ell + tail[-(max_len - 1):]
 
-    head_budget = max_len - len(tail) - 1  # space for head + ellipsis
+    head_budget = max_len - len(tail) - 2  # reserve 1 for "…" and 1 for "/"
     return f"{stripped[:head_budget]}{ell}/{tail}"
 
 def print_summary(found_count, total_count, use_color=True):

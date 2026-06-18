@@ -1,6 +1,6 @@
 # LeftOvers
 
-![Version](https://img.shields.io/badge/version-1.9.0-blue.svg)
+![Version](https://img.shields.io/badge/version-1.9.1-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.7+-green.svg)
 ![License](https://img.shields.io/badge/license-MIT-orange.svg)
 ![Performance](https://img.shields.io/badge/performance-optimized-brightgreen.svg)
@@ -124,21 +124,26 @@ leftovers -u http://example.com --level 2
 
 ### Scan Levels
 
+The `--level` controls both the extension set **and** the brute-force
+wordlist size (with `-b`), so you opt into cost explicitly:
+
 ```bash
 # Level 0 - Critical Only (~10-15 tests) - Ultra-fast, only critical files
 leftovers -u http://example.com --level 0
 
-# Level 1 - Quick (~500 tests) - Fast scan with essential extensions
+# Level 1 - Quick - Fast scan; ~40 highest-value brute words with -b
 leftovers -u http://example.com --level 1
 
-# Level 2 - Balanced (~2-3K tests) - DEFAULT - Good balance of speed/coverage
+# Level 2 - Balanced (DEFAULT) - Common extensions incl. archives
+#           (zip/rar/tar.gz); curated brute wordlist (~750) with -b
 leftovers -u http://example.com --level 2
 
-# Level 3 - Deep (~5-6K tests) - Comprehensive scan
+# Level 3 - Deep - Comprehensive extensions; curated brute wordlist with -b
 leftovers -u http://example.com --level 3
 
-# Level 4 - Exhaustive (~6-10K tests) - Maximum coverage
-leftovers -u http://example.com --level 4
+# Level 4 - Exhaustive - All extensions + full brute wordlist (~890,
+#           incl. noisy permutations). "Test everything."
+leftovers -u http://example.com --level 4 -b
 ```
 
 ### Language Filtering
@@ -342,7 +347,34 @@ Contributions are welcome! Feel free to open issues or submit pull requests.
 
 ## 📝 Changelog
 
-### v1.4.9 (Latest)
+### v1.9.1 (Latest)
+
+**🎯 Coverage & Wordlists:**
+- Brute-force wordlist now **scales with `--level`**: quick (~40) at levels 0-1,
+  curated (~750) at levels 2-3, exhaustive (~890, incl. noisy permutations) at level 4.
+- Default level 2 now tests **compressed archives** (zip/rar/tar/gz/tgz/7z/tar.gz) —
+  the #1 leftover/backup format.
+- Added many missing base-filename words (`bin`, `build`, `src`, `vendor`, …),
+  infra/dev terms, and PT-BR business docs; fixed WordPress paths to use real
+  hyphenated names (`wp-content`, `wp-includes`, `wp-admin`).
+- Added compound archive/db extensions actually generated now (`tar.gz`, `sql.gz`, …).
+
+**🖥️ UI/UX:**
+- Always print a compact perf summary (`N requests in Xs (R req/s) · H hits`).
+- Top Findings keep the **filename visible** (no more truncating the URL tail).
+- Abbreviated content types (`Binary`, `SQL`, `ZIP`, …) instead of raw cuts.
+- Clearer summary labels; fixed the status-color legend rendering.
+
+**🐛 Correctness:**
+- Removed duplicate HTTP requests for "important"/archive extensions, while
+  still reporting protected (401/403) and redirected matches.
+- Large files report the real `Content-Length` (fixes size display + `--min/--max-size`).
+- Fewer false positives on JSON/API targets; SPA detection no longer drops real
+  `.js.bak`/`.json`/bundle findings.
+- Domain-only targets probe `index.{ext}` instead of a useless `/.ext` dotfile.
+- Fixed a concurrent-write race and an unlocked stats read in the scanner.
+
+### v1.4.9
 
 **🎯 Major Features:**
 - **Scan Levels (0-4)**: Progressive complexity levels from critical-only to exhaustive
@@ -366,7 +398,7 @@ Contributions are welcome! Feel free to open issues or submit pull requests.
 **⚡ Performance Improvements:**
 - Reorganized to `leftovers.*` namespace package
 - Refactored config helpers into separate module
-- Cleaned up 230+ extensions organization
+- Cleaned up 280+ extensions organization
 - Sanity check now runs before critical file testing
 - Headers only shown when results exist
 

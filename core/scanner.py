@@ -520,14 +520,10 @@ class LeftOver:
         """
         direct_url = self._build_direct_url(target_url, extension)
 
-        # Atomically claim the URL so the regular extension loop (test_url)
-        # doesn't request the exact same URL again. Without this, every
-        # "important" extension was fetched twice (and FP frequency tables
-        # were skewed by counting the same response twice).
+        # Skip if already tested (e.g. another extension path claimed it).
         with self._tested_urls_lock:
             if direct_url in self.tested_urls:
                 return False
-            self.tested_urls.add(direct_url)
 
         if self.verbose:
             prefix = "HIGH PRIORITY: " if important else ""
@@ -553,10 +549,23 @@ class LeftOver:
         response = result["response"]
         status_code = response.status_code
 
-        # Non-success codes are ignored by the direct test — the regular
-        # extension loop still covers them via test_url().
+        # The direct test only REPORTS 200/206. For other codes we must be
+        # careful with dedup: claim 404/410 (definitively absent) so the main
+        # loop doesn't re-request them, but leave 401/403/3xx/5xx UNCLAIMED so
+        # the regular extension loop still reports those potential findings
+        # (a 403 on backup.zip means the file exists — a valuable leftover).
         if status_code not in (200, 206):
+            if status_code in (404, 410):
+                with self._tested_urls_lock:
+                    self.tested_urls.add(direct_url)
             return False
+
+        # 200/206 hit: claim the URL so the main extension loop doesn't fetch
+        # the exact same URL again (and FP tables aren't double-counted).
+        with self._tested_urls_lock:
+            if direct_url in self.tested_urls:
+                return False
+            self.tested_urls.add(direct_url)
 
         content_type = response.headers.get('Content-Type', 'N/A')
         content_type_base = content_type.split(';')[0].strip()
