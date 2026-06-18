@@ -112,8 +112,10 @@ class LeftOver:
         )
         
         # False-positive state is per-URL (built via _new_fp_state) to avoid
-        # cross-URL contamination in list mode. Legacy attributes are kept as
-        # a fallback for any external callers that still expect them.
+        # cross-URL contamination in list mode. These attributes are inert
+        # back-compat placeholders for external callers — they are NOT written
+        # during scans (the per-URL fp_state holds the live baseline/main page),
+        # which previously caused a benign data race across list-mode workers.
         self.error_fingerprints = defaultdict(int)
         self.baseline_responses = {}
         self._main_page = None
@@ -167,6 +169,10 @@ class LeftOver:
         self._max_latency_samples = 20  # Track last 20 requests
         self._adaptive_lock = threading.Lock()
         self._adjustment_interval = 50  # Adjust every 50 requests
+        # Monotonic counter of latency samples, guarded by _adaptive_lock, used
+        # to trigger periodic re-tuning. Decoupled from self.stats['requests']
+        # (a different lock) so the modulus check is deterministic.
+        self._latency_sample_count = 0
     
     def _track_request_latency(self, latency: float) -> None:
         """
@@ -181,13 +187,15 @@ class LeftOver:
         with self._adaptive_lock:
             # Add latency sample
             self._latency_samples.append(latency)
+            self._latency_sample_count += 1
 
             # Keep only recent samples
             if len(self._latency_samples) > self._max_latency_samples:
                 self._latency_samples.pop(0)
 
-            # Adjust threads every N requests
-            if self.stats['requests'] % self._adjustment_interval == 0 and len(self._latency_samples) >= 10:
+            # Adjust threads every N samples (counter is guarded by this same
+            # lock, so the trigger fires exactly once per interval).
+            if self._latency_sample_count % self._adjustment_interval == 0 and len(self._latency_samples) >= 10:
                 self._adjust_thread_count()
 
     def _adjust_thread_count(self) -> None:
@@ -680,9 +688,7 @@ class LeftOver:
         )
         fp_state["main_page"] = main_page
         fp_state["baseline_responses"] = baseline or {}
-        self._main_page = main_page
-        self.baseline_responses = baseline or {}
-        
+
         if not test_urls:
             return
         
@@ -1301,8 +1307,6 @@ class LeftOver:
         )
         fp_state["main_page"] = local_main_page
         fp_state["baseline_responses"] = local_baseline or {}
-        self._main_page = local_main_page
-        self.baseline_responses = local_baseline or {}
 
         if not test_urls:
             elapsed = time.time() - scan_start
