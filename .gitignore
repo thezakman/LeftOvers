@@ -44,6 +44,9 @@ output/
 # Autosave directory written by the tool at runtime
 /leftovers/*.jsonl
 
+# Personal notes / scratch
+TODO/
+
 # Others
 .coverage
 htmlcov/
