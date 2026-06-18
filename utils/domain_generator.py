@@ -197,10 +197,10 @@ class DomainWordlistGenerator:
         """
         domain_variations = self.generate_domain_wordlist(url)
 
-        # Combine with existing words, removing duplicates
-        enhanced_list = list(set(existing_words + domain_variations))
-
-        return enhanced_list
+        # Combine with existing words, removing duplicates while PRESERVING
+        # order (existing curated words first). list(set(...)) scrambled the
+        # priority ordering non-deterministically on every run.
+        return list(dict.fromkeys(existing_words + domain_variations))
 
     def generate_targeted_extensions(self, url: str) -> List[str]:
         """

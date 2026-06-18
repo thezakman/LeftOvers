@@ -1,6 +1,6 @@
 # LeftOvers
 
-![Version](https://img.shields.io/badge/version-1.9.2-blue.svg)
+![Version](https://img.shields.io/badge/version-1.9.3-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.7+-green.svg)
 ![License](https://img.shields.io/badge/license-MIT-orange.svg)
 ![Performance](https://img.shields.io/badge/performance-optimized-brightgreen.svg)
@@ -347,7 +347,21 @@ Contributions are welcome! Feel free to open issues or submit pull requests.
 
 ## 📝 Changelog
 
-### v1.9.2 (Latest)
+### v1.9.3 (Latest)
+
+**🐛 Metrics & stats correctness:**
+- `--metrics` table is now populated — `record_request()` was never called, so
+  the table previously showed all zeros. Recording is now wired into every
+  request and is O(1) + thread-safe (the average was recomputed from a growing
+  list on every call — quadratic — and the recorder had no lock).
+- List mode no longer writes shared `start_time`/`end_time` from concurrent URL
+  workers (data race) and no longer prints per-URL stats computed against the
+  global request counter; the correct aggregated "Global Statistics" block
+  remains.
+- Domain wordlist merge preserves order deterministically (`list(set(...))`
+  scrambled the curated priority ordering).
+
+### v1.9.2
 
 **🐛 Robustness (HTTP client & generators):**
 - Large-file ranged GETs now accumulate the sampled bytes (a single chunk can

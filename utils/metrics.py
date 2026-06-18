@@ -3,6 +3,7 @@ Performance metrics and statistics tracking for LeftOvers scanner.
 """
 
 import time
+import threading
 from typing import Dict, List, Optional
 from dataclasses import dataclass, field
 from collections import defaultdict
@@ -38,8 +39,15 @@ class ScanMetrics:
     avg_response_time: float = 0.0
     min_response_time: float = float('inf')
     max_response_time: float = 0.0
-    response_times: List[float] = field(default_factory=list)
-    
+
+    # Internal running aggregates (kept O(1); not constructor args).
+    # Computing the average from a growing list on every request was O(n²);
+    # a running sum/count keeps it O(1). A lock makes record_* thread-safe
+    # since they are called from concurrent scan workers.
+    _response_time_sum: float = field(default=0.0, init=False, repr=False, compare=False)
+    _response_time_count: int = field(default=0, init=False, repr=False, compare=False)
+    _lock: "threading.Lock" = field(default_factory=threading.Lock, init=False, repr=False, compare=False)
+
     def record_request(self, success: bool, status_code: Optional[int] = None, 
                        response_time: Optional[float] = None, 
                        bytes_downloaded: int = 0, error_type: Optional[str] = None):
@@ -53,32 +61,31 @@ class ScanMetrics:
             bytes_downloaded: Number of bytes downloaded
             error_type: Type of error if request failed
         """
-        self.total_requests += 1
-        
-        if success:
-            self.successful_requests += 1
-        else:
-            self.failed_requests += 1
-            
-            if error_type == 'timeout':
-                self.timeout_errors += 1
-            elif error_type == 'connection':
-                self.connection_errors += 1
-        
-        if status_code:
-            self.status_codes[status_code] += 1
-        
-        if response_time is not None:
-            self.response_times.append(response_time)
-            self.min_response_time = min(self.min_response_time, response_time)
-            self.max_response_time = max(self.max_response_time, response_time)
-            
-            # Update average
-            if self.response_times:
-                self.avg_response_time = sum(self.response_times) / len(self.response_times)
-        
-        if bytes_downloaded > 0:
-            self.total_bytes_downloaded += bytes_downloaded
+        with self._lock:
+            self.total_requests += 1
+
+            if success:
+                self.successful_requests += 1
+            else:
+                self.failed_requests += 1
+
+                if error_type == 'timeout':
+                    self.timeout_errors += 1
+                elif error_type == 'connection':
+                    self.connection_errors += 1
+
+            if status_code:
+                self.status_codes[status_code] += 1
+
+            if response_time is not None:
+                self._response_time_sum += response_time
+                self._response_time_count += 1
+                self.min_response_time = min(self.min_response_time, response_time)
+                self.max_response_time = max(self.max_response_time, response_time)
+                self.avg_response_time = self._response_time_sum / self._response_time_count
+
+            if bytes_downloaded > 0:
+                self.total_bytes_downloaded += bytes_downloaded
     
     def record_discovery(self, is_false_positive: bool = False, extension: Optional[str] = None):
         """
@@ -88,13 +95,14 @@ class ScanMetrics:
             is_false_positive: Whether this is a false positive
             extension: File extension discovered
         """
-        self.files_found += 1
-        
-        if is_false_positive:
-            self.false_positives += 1
-        
-        if extension and extension not in self.unique_extensions_found:
-            self.unique_extensions_found.append(extension)
+        with self._lock:
+            self.files_found += 1
+
+            if is_false_positive:
+                self.false_positives += 1
+
+            if extension and extension not in self.unique_extensions_found:
+                self.unique_extensions_found.append(extension)
     
     def finalize(self):
         """Mark the scan as complete and record end time."""

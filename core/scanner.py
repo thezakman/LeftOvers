@@ -277,6 +277,35 @@ class LeftOver:
             self.stats['total_time'] += req_time
             self.stats['hits'] += hits
 
+    def _record_request_metric(self, result: Dict[str, Any], req_time: float) -> None:
+        """Feed one HTTP request outcome into ScanMetrics (the --metrics table).
+
+        Thread-safe via ScanMetrics' own lock. 'success' here means the request
+        got a response (a 404 is a successful request, just not a finding);
+        timeouts/connection errors are counted as failures.
+        """
+        success = bool(result.get("success"))
+        status_code = None
+        bytes_dl = 0
+        if success and result.get("response") is not None:
+            resp = result["response"]
+            status_code = getattr(resp, "status_code", None)
+            try:
+                body = resp.content
+                bytes_dl = len(body) if body else 0
+            except Exception:
+                bytes_dl = 0
+        error_type = None
+        err = (result.get("error") or "").lower()
+        if "tim" in err:
+            error_type = "timeout"
+        elif "connection" in err:
+            error_type = "connection"
+        self.metrics.record_request(
+            success=success, status_code=status_code, response_time=req_time,
+            bytes_downloaded=bytes_dl, error_type=error_type,
+        )
+
     def _new_fp_state(self, main_page=None, baseline_responses=None) -> Dict[str, Any]:
         """Build a fresh per-URL FP-tracking state.
 
@@ -395,6 +424,7 @@ class LeftOver:
             # Calculate request time
             req_time = time.time() - start_time
             self._inc_stats(requests=1, req_time=req_time)
+            self._record_request_metric(result, req_time)
 
             # Track latency for adaptive threading
             self._track_request_latency(req_time)
@@ -537,6 +567,7 @@ class LeftOver:
                 result = self.http_client.get(direct_url)
             req_time = time.time() - start_time
             self._inc_stats(requests=1, req_time=req_time)
+            self._record_request_metric(result, req_time)
             self._track_request_latency(req_time)
         except (requests.RequestException, OSError) as e:
             if self.verbose:
@@ -1273,8 +1304,10 @@ class LeftOver:
         with self._stats_lock:
             req_start = self.stats['requests']
             hit_start = self.stats['hits']
-            self.stats['start_time'] = time.time()
-        scan_start = self.stats['start_time']
+        # Use a LOCAL start time — writing the shared self.stats['start_time']
+        # from concurrent URL workers races and corrupts timing. Per-URL totals
+        # are returned as deltas below; the caller aggregates them.
+        scan_start = time.time()
 
         optimized_extensions = self.extension_optimizer.optimize_extensions(
             self.extensions, target_url
@@ -1416,10 +1449,10 @@ class LeftOver:
                     print()
 
         scan_end = time.time()
-        self.stats['end_time'] = scan_end
-
-        if self.verbose:
-            self._display_performance_stats()
+        # Per-URL stats are reported via the aggregated global block at the end
+        # of process_url_list (which uses correct locked deltas). The shared
+        # _display_performance_stats() would mix this URL's clock with the
+        # global request counter, so it is intentionally not called here.
 
         elapsed = scan_end - scan_start
         with self._stats_lock:
