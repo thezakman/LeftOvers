@@ -1,6 +1,6 @@
 # LeftOvers
 
-![Version](https://img.shields.io/badge/version-1.7.0-blue.svg)
+![Version](https://img.shields.io/badge/version-1.8.0-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.7+-green.svg)
 ![License](https://img.shields.io/badge/license-MIT-orange.svg)
 ![Performance](https://img.shields.io/badge/performance-optimized-brightgreen.svg)
@@ -242,7 +242,7 @@ python LeftOvers.py --help
 
 ### Intelligent Detection
 - **False Positive Filtering**: Advanced baseline comparison with content hash analysis
-- **Multi-Format Support**: Tests 230+ file extensions across multiple categories
+- **Multi-Format Support**: Tests 280+ file extensions across multiple categories
 - **Smart Extension Prioritization**: Automatically prioritizes extensions based on target context
 - **Sanity Checking**: Pre-scan analysis to understand server error behavior
 
@@ -254,7 +254,7 @@ python LeftOvers.py --help
 - **Efficient Memory Management**: Handles large files (>10MB) intelligently
 
 ### Brute Force Capabilities
-- **Standard Mode**: Test directories and files using 580+ common keywords
+- **Standard Mode**: Test directories and files using 740+ common keywords (level-scaled: ~40 quick, ~750 curated, ~890 exhaustive)
 - **Recursive Mode**: Test each path level independently
 - **Domain Wordlists**: Generates intelligent backup file patterns based on domain analysis
 - **Custom Wordlists**: Support for custom wordlist files
@@ -382,8 +382,8 @@ Contributions are welcome! Feel free to open issues or submit pull requests.
 
 **📊 Statistics:**
 - 5 scan levels (0-4)
-- 230+ file extensions tested
-- 580+ backup keywords
+- 280+ file extensions tested
+- 740+ backup keywords (scaled by --level)
 - Smart baseline detection
 - Zero duplicate tests
 

@@ -30,13 +30,41 @@ from leftovers.core.config import (
     PTBR_BUSINESS_WORDS,
     PTBR_CORPORATE_WORDS,
     PTBR_TECHNICAL_WORDS,
+    PTBR_DOCS_WORDS,
+    COMMON_FILENAME_WORDS,
+    INFRA_DEV_WORDS,
+    BACKUP_VARIANT_WORDS,
     DEFAULT_BACKUP_WORDS,
+    EXHAUSTIVE_BACKUP_WORDS,
+    QUICK_BACKUP_WORDS,
     CRITICAL_SPECIFIC_FILES,
     SPECIFIC_FILES,
     VCS_SPECIFIC_FILES,
     BACKUP_SUFFIXES,
     DATABASE_CONFIG_WORDS,
 )
+
+
+def get_brute_words_by_level(level: int = 2) -> list:
+    """
+    Select the brute-force wordlist tier for a given scan level.
+
+    Levels scale word coverage so users opt into cost explicitly:
+        0-1 - Quick: ~40 highest-value words only
+        2-3 - Standard: full curated wordlist (high-signal)
+        4+  - Exhaustive: curated + aggressive permutations ("test everything")
+
+    Args:
+        level: Scan complexity level (0-4)
+
+    Returns:
+        List of backup words for brute-force at the given level
+    """
+    if level <= 1:
+        return QUICK_BACKUP_WORDS
+    if level >= 4:
+        return EXHAUSTIVE_BACKUP_WORDS
+    return DEFAULT_BACKUP_WORDS
 
 
 def get_extensions_by_priority(priority: str = "all") -> list:
@@ -117,14 +145,20 @@ def get_words_by_language(language: str = "all") -> list:
     Returns:
         List of backup words for the specified language
     """
+    # Language-neutral categories (generic filenames, infra/dev, backup
+    # variants) are useful regardless of the site's language, so they are
+    # included in every filter. Results are deduplicated, preserving order.
+    neutral = [*COMMON_FILENAME_WORDS, *INFRA_DEV_WORDS, *BACKUP_VARIANT_WORDS,
+               *BACKUP_DIRECTORY_WORDS, *VERSION_CONTROL_WORDS, *DATE_VERSION_WORDS]
     if language == "en":
-        return [*DEFAULT_FILES_WORDS, *EN_COMMON_WORDS, *BACKUP_DIRECTORY_WORDS,
-                *WEB_RELATED_WORDS, *VERSION_CONTROL_WORDS, *DATE_VERSION_WORDS]
+        words = [*DEFAULT_FILES_WORDS, *EN_COMMON_WORDS, *WEB_RELATED_WORDS, *neutral]
     elif language == "pt-br":
-        return [*DEFAULT_FILES_WORDS, *PTBR_COMMON_WORDS, *PTBR_BUSINESS_WORDS,
-                *PTBR_CORPORATE_WORDS, *PTBR_TECHNICAL_WORDS, *BACKUP_DIRECTORY_WORDS]
+        words = [*DEFAULT_FILES_WORDS, *PTBR_COMMON_WORDS, *PTBR_BUSINESS_WORDS,
+                 *PTBR_CORPORATE_WORDS, *PTBR_TECHNICAL_WORDS, *PTBR_DOCS_WORDS,
+                 *neutral]
     else:  # all
         return DEFAULT_BACKUP_WORDS
+    return list(dict.fromkeys(words))
 
 
 def get_specific_files(priority: str = "all") -> list:
@@ -246,12 +280,12 @@ def get_config_by_level(level: int = 2) -> dict:
         }
     
     else:  # level >= 4
-        # EXHAUSTIVE - ALL extensions + ALL words for brute (~100K+ with -b)
+        # EXHAUSTIVE - ALL extensions + ALL words (curated + aggressive) for brute
         return {
-            "extensions": DEFAULT_EXTENSIONS,  # All 233 extensions
-            "words": DEFAULT_BACKUP_WORDS,     # All 581 words (for -b mode)
+            "extensions": DEFAULT_EXTENSIONS,        # All extensions
+            "words": EXHAUSTIVE_BACKUP_WORDS,        # Curated + aggressive (for -b)
             "specific_files": get_specific_files(),
-            "description": "Exhaustive scan - maximum coverage (~5-10K tests, ~100K+ with -b)"
+            "description": "Exhaustive scan - maximum coverage incl. noisy permutations (~5-10K tests, ~250K+ with -b)"
         }
 
 

@@ -12,7 +12,7 @@ import _thread
 from leftovers.app_settings import VERSION
 from leftovers.core.config import (
     DEFAULT_TIMEOUT, DEFAULT_THREADS, DEFAULT_EXTENSIONS,
-    DEFAULT_BACKUP_WORDS, DEFAULT_HEADERS
+    DEFAULT_HEADERS
 )
 from leftovers.core.scanner import LeftOver
 from leftovers.core.detection import parse_status_codes
@@ -95,8 +95,8 @@ def parse_arguments():
     parser.add_argument("-br", "--brute-recursive", action="store_true", help="Enable recursive brute force mode (test each path level)")
     parser.add_argument("-d", "--domain-wordlist", action="store_true", help="Enable dynamic domain-based wordlist generation (generates domain-specific permutations)")
     parser.add_argument("--fast-scan", action="store_true", help="Quick scan mode: brute force + domain wordlist + optimized extensions")
-    parser.add_argument("--level", type=int, choices=[0, 1, 2, 3, 4], default=2, 
-                       help="Scan complexity level: 0=Critical only (~10-15), 1=Quick (~500), 2=Balanced (~2-3K, default), 3=Deep (~5-8K), 4=Exhaustive (~5-10K, ~100K+ with -b)")
+    parser.add_argument("--level", type=int, choices=[0, 1, 2, 3, 4], default=2,
+                       help="Scan complexity level (also scales -b wordlist): 0=Critical only (~10-15), 1=Quick (~500, ~40 brute words), 2=Balanced (default, curated brute words), 3=Deep (~5-8K, curated brute words), 4=Exhaustive (all extensions + full brute wordlist incl. noisy permutations)")
     parser.add_argument("--lang", type=str, choices=["en", "pt-br", "all"], default="all",
                        help="Language filter for brute force words: en=English only, pt-br=Portuguese only, all=Both (default)")
     
@@ -247,10 +247,12 @@ def configure_scanner_from_args(args):
 
     # Add brute force capability if requested, including fast-scan mode
     if args.brute or args.brute_recursive or args.domain_wordlist or args.fast_scan:
-        # If brute mode is enabled, use full word list (override level for brute)
-        if args.brute and args.level < 3:
-            backup_words = DEFAULT_BACKUP_WORDS.copy()
-        # Otherwise backup_words already set from level_config above
+        # Word coverage scales with --level: quick (0-1), curated (2-3),
+        # exhaustive incl. noisy permutations (4). A user-supplied --lang
+        # filter (handled above) takes precedence over the level tier.
+        if args.lang == "all":
+            from leftovers.core.helpers import get_brute_words_by_level
+            backup_words = get_brute_words_by_level(args.level)
 
         # Configure fast-scan mode (enables multiple features at once)
         if args.fast_scan:

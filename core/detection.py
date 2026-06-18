@@ -101,9 +101,14 @@ def establish_baseline(http_client: HttpClient, base_url: str, verbose: bool = F
                 response = result["response"]
                 content_hash = calculate_content_hash(response.content)
                 
-                # Extract text content for semantic comparison
+                # Extract text content for semantic comparison.
+                # Include JSON/XML, not just text/*: API targets serve their
+                # 404 pages as application/json (or +json), and the FP check
+                # extracts text from the found response unconditionally — if the
+                # baseline skipped these, generic JSON 404s slip through as hits.
                 text_content = ""
-                if response.headers.get('Content-Type', '').lower().startswith('text/'):
+                ct = response.headers.get('Content-Type', '').lower()
+                if ct.startswith('text/') or 'json' in ct or 'xml' in ct:
                     try:
                         text_content = _extract_text_content(response.content)
                     except Exception:
@@ -378,8 +383,12 @@ def check_false_positive(
             if size_frequency[size_key] >= threshold:
                 return True, f"Generic error image ({result.content_length:,} bytes) returned for multiple files"
 
-    # Check for SPA (Single Page Application) fallback behavior
-    if result.status_code in SUCCESS_STATUSES and response_content:
+    # Check for SPA (Single Page Application) fallback behavior.
+    # Only run on actual HTML responses: a SPA fallback always serves
+    # text/html, while a real leftover (.js.bak, .json, a JS bundle) can
+    # legitimately contain framework names and must not be dropped here.
+    if (result.status_code in SUCCESS_STATUSES and response_content
+            and 'html' in result.content_type.lower()):
         try:
             # Use raw HTML content for SPA detection, not the stripped text
             html_content = response_content.decode('utf-8', errors='ignore')
@@ -449,43 +458,6 @@ def _token_set_similarity(text1: str, text2: str) -> float:
     
     return len(intersection) / len(union)
 
-def _words_near_each_other(text: str, word1: str, word2: str, window: int = 10) -> bool:
-    """
-    Check if two words or phrases are near each other in text.
-    
-    Args:
-        text: Text to search in
-        word1: First word/phrase to find
-        word2: Second word/phrase to find
-        window: Maximum number of words between occurrences
-        
-    Returns:
-        Boolean indicating if words are within window words of each other
-    """
-    # Find all occurrences of word1
-    word1_positions = [m.start() for m in re.finditer(re.escape(word1), text)]
-    word2_positions = [m.start() for m in re.finditer(re.escape(word2), text)]
-    
-    if not word1_positions or not word2_positions:
-        return False
-    
-    # Check if any occurrence of word1 is near any occurrence of word2
-    for pos1 in word1_positions:
-        for pos2 in word2_positions:
-            # Get the words between the two positions
-            if pos1 < pos2:
-                between_text = text[pos1 + len(word1):pos2]
-            else:
-                between_text = text[pos2 + len(word2):pos1]
-                
-            # Count words in between
-            words_between = len(re.findall(r'\s+', between_text.strip()))
-            
-            # If words_between is less than our window, they're close enough
-            if words_between <= window:
-                return True
-                
-    return False
 
 def perform_sanity_check(http_client: HttpClient, base_url: str, verbose: bool = False):
     """
@@ -709,15 +681,13 @@ def _check_spa_fallback(html_content: str, url: str) -> str:
         ('name="viewport"', 'SPA viewport meta tag'),
         ('type="module"', 'ES6 module script'),
 
-        # Common SPA frameworks/libraries
-        ('react', 'React framework reference'),
-        ('vue', 'Vue framework reference'),
-        ('angular', 'Angular framework reference'),
-
-        # Build tool signatures
-        ('webpack', 'Webpack bundler'),
-        ('vite', 'Vite bundler'),
-        ('parcel', 'Parcel bundler')
+        # Build tool signatures inside script/link tags. Bare framework names
+        # ('react', 'vue', 'angular', 'webpack') are intentionally NOT matched:
+        # a real leftover bundle or backup legitimately contains those words,
+        # and matching them caused real findings to be dropped as false SPAs.
+        ('/runtime-', 'Angular/Webpack runtime chunk'),
+        ('/polyfills-', 'Webpack polyfills chunk'),
+        ('/main.', 'SPA main bundle'),
     ]
 
     detected_indicators = []

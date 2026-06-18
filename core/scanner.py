@@ -398,7 +398,10 @@ class LeftOver:
             headers = response.headers
             content_type = headers.get('Content-Type', 'N/A')
             content = response.content
-            content_length = len(content) if content else 0
+            # Use the Content-Length header when available: large files are
+            # fetched with a ranged GET (first 8 KB) so len(content) would
+            # under-report the real size and break --min/--max-content-length.
+            content_length = self._extract_content_length(response, content)
             
             # Create the ScanResult object with the response data
             scan_result = ScanResult(
