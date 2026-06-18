@@ -192,7 +192,11 @@ class HttpClient:
             total=max_retries,
             backoff_factor=backoff_factor,
             status_forcelist=[429, 500, 502, 503, 504],
-            allowed_methods=["HEAD", "GET"]
+            allowed_methods=["HEAD", "GET"],
+            # Return the final response (with its real status) once retries are
+            # exhausted instead of raising — a 429/503 is meaningful signal for
+            # a scanner and must not be dropped as a request error.
+            raise_on_status=False,
         )
 
         # Create adapter with optimized connection pooling
@@ -229,6 +233,28 @@ class HttpClient:
                     time.sleep(sleep_time)
 
                 self._last_request_time = time.time()
+
+    @staticmethod
+    def _drain_capped(response, max_bytes: int) -> bytes:
+        """Read up to ``max_bytes`` from a streaming response, store them on
+        ``response._content``, and ALWAYS close the response so the underlying
+        connection is returned to the pool (a streamed body that isn't drained
+        or closed leaks the socket). Accumulates chunks rather than reading a
+        single chunk, since iter_content may yield less than the chunk size.
+        """
+        content = b''
+        try:
+            for chunk in response.iter_content(chunk_size=CHUNK_SIZE):
+                if not chunk:
+                    continue
+                content += chunk
+                if len(content) >= max_bytes:
+                    content = content[:max_bytes]
+                    break
+        finally:
+            response.close()
+        response._content = content
+        return content
 
     def get(self, url: str,
             extra_headers: Optional[Dict[str, str]] = None,
@@ -312,17 +338,8 @@ class HttpClient:
                     stream=True,
                     allow_redirects=True,
                 )
-                # Read up to (end-start+1) bytes
-                max_read = max(0, end - start + 1)
-                content = b''
-                for chunk in response.iter_content(chunk_size=CHUNK_SIZE):
-                    if not chunk:
-                        continue
-                    content += chunk
-                    if len(content) >= max_read:
-                        content = content[:max_read]
-                        break
-                response._content = content
+                # Read up to (end-start+1) bytes, then release the connection
+                self._drain_capped(response, max(0, end - start + 1))
                 result["success"] = True
                 result["response"] = response
                 result["partial_content"] = True
@@ -395,8 +412,9 @@ class HttpClient:
                         allow_redirects=True,
                     )
 
-                    content = next(response.iter_content(CHUNK_SIZE), b'')
-                    response._content = content
+                    # Accumulate up to 8 KB (a single chunk may be short) and
+                    # close the stream to avoid leaking the connection.
+                    self._drain_capped(response, 8192)
 
                     if content_length and head_response:
                         for header in ('Content-Length', 'Content-Type', 'Last-Modified', 'ETag'):
@@ -420,14 +438,9 @@ class HttpClient:
                             headers=fallback_headers,
                         )
 
-                        content = b''
-                        max_chunks = 5
-                        for idx, chunk in enumerate(response.iter_content(chunk_size=CHUNK_SIZE)):
-                            content += chunk
-                            if idx + 1 >= max_chunks:
-                                break
-
-                        response._content = content
+                        # Fallback with no Range support: cap the read at
+                        # ~5 chunks and release the connection.
+                        self._drain_capped(response, 5 * CHUNK_SIZE)
                         result["success"] = True
                         result["response"] = response
                         result["large_file"] = True

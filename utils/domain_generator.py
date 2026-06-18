@@ -15,8 +15,14 @@ class DomainWordlistGenerator:
 
     def __init__(self):
         """Initialize with existing LeftOvers extensions."""
-        # Use existing categorized extensions from config
-        self.backup_extensions = ARCHIVE_EXTENSIONS + BACKUP_SUFFIXES + DATABASE_EXTENSIONS
+        # Use existing categorized extensions from config, but drop pseudo
+        # "extensions" that don't form a real filename when appended as
+        # ``name.ext`` — BACKUP_SUFFIXES contains "~" and ".~", which produced
+        # garbage words like "domain.~" / "domain..~". Dedup while we're at it.
+        _raw = ARCHIVE_EXTENSIONS + BACKUP_SUFFIXES + DATABASE_EXTENSIONS
+        self.backup_extensions = list(dict.fromkeys(
+            e for e in _raw if e and e != '~' and not e.startswith('.')
+        ))
 
     def generate_domain_wordlist(self, url: str) -> List[str]:
         """
@@ -47,14 +53,14 @@ class DomainWordlistGenerator:
             hostname, subdomain, domain, suffix
         )
 
-        # Optimize: limit variations to prevent memory issues
-        # Take only the most relevant variations (first 100) and most important extensions
+        # Optimize: limit variations to prevent memory issues. Use the full
+        # (already deduped/filtered) extension set so compound DB dumps like
+        # sql.gz / db.gz aren't silently dropped by an arbitrary slice.
         limited_variations = list(base_variations)[:100]
-        important_extensions = self.backup_extensions[:50]  # Limit to top 50 extensions
 
         # Add extensions to each variation
         for variation in limited_variations:
-            for ext in important_extensions:
+            for ext in self.backup_extensions:
                 wordlist.add(f"{variation}.{ext}")
 
         return list(wordlist)

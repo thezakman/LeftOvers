@@ -20,8 +20,20 @@ IP_PATTERN = re.compile(r'^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$')
 # Cache for already processed URLs
 @lru_cache(maxsize=128)
 def is_ip_address(hostname: str) -> bool:
-    """Checks if the hostname is an IP address (with cache)."""
-    return bool(IP_PATTERN.match(hostname))
+    """Checks if the hostname is an IPv4 address.
+
+    Strips a trailing port (and IPv6 brackets) first so that "1.2.3.4:8080"
+    is still recognized as an IP — otherwise IP targets on non-default ports
+    fall through to domain-permutation logic and skip the IP word filter.
+    """
+    if not hostname:
+        return False
+    host = hostname.strip()
+    if host.startswith('['):              # [::1]:8080 -> ::1 (IPv6, won't match v4)
+        host = host[1:].split(']', 1)[0]
+    elif host.count(':') == 1:            # 1.2.3.4:8080 -> 1.2.3.4 (one colon = host:port)
+        host = host.split(':', 1)[0]
+    return bool(IP_PATTERN.match(host))
 
 # Common directory list for IP tests pre-defined
 COMMON_IP_PATH_TESTS = [
@@ -67,8 +79,8 @@ def generate_test_urls(
     scheme = parsed.scheme or "http"
     hostname = parsed.netloc
     full_hostname = hostname
-    
-    # Detect if the hostname is an IP address - using cache
+
+    # Detect if the hostname is an IP address (is_ip_address strips any port).
     is_ip = is_ip_address(hostname)
     
     if is_ip and verbose:

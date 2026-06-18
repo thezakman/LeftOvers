@@ -1,6 +1,6 @@
 # LeftOvers
 
-![Version](https://img.shields.io/badge/version-1.9.1-blue.svg)
+![Version](https://img.shields.io/badge/version-1.9.2-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.7+-green.svg)
 ![License](https://img.shields.io/badge/license-MIT-orange.svg)
 ![Performance](https://img.shields.io/badge/performance-optimized-brightgreen.svg)
@@ -347,7 +347,21 @@ Contributions are welcome! Feel free to open issues or submit pull requests.
 
 ## 📝 Changelog
 
-### v1.9.1 (Latest)
+### v1.9.2 (Latest)
+
+**🐛 Robustness (HTTP client & generators):**
+- Large-file ranged GETs now accumulate the sampled bytes (a single chunk can
+  be short) and **close the stream**, preventing truncated bodies and leaked
+  sockets/file descriptors on long scans.
+- Exhausted retries on 429/5xx now return the real response instead of raising,
+  so rate-limited/erroring targets are reported rather than dropped.
+- `is_ip_address()` strips the port, so IP targets on non-default ports
+  (`1.2.3.4:8080`) are handled correctly (no malformed permutation URLs).
+- Domain wordlist no longer emits malformed words (`domain.~`, `domain..~`) and
+  no longer drops compressed DB dumps (`sql.gz`, `db.gz`).
+- `format_size()` handles negative sizes gracefully.
+
+### v1.9.1
 
 **🎯 Coverage & Wordlists:**
 - Brute-force wordlist now **scales with `--level`**: quick (~40) at levels 0-1,

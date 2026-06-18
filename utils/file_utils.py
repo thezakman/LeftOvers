@@ -73,20 +73,25 @@ def format_size(size_bytes: int) -> str:
     Returns:
         Formatted size string (e.g., "2.5 KB", "1.2 MB")
     """
-    if size_bytes is None or size_bytes == 0:
+    if not size_bytes:  # None or 0
         return "0 B"
-        
+
+    # Handle negative sizes (e.g. from a malformed Content-Length) gracefully
+    # instead of returning "-5000 B" with no unit scaling.
+    sign = "-" if size_bytes < 0 else ""
+    size_bytes = abs(size_bytes)
+
     units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
-    
+
     unit = 0
     while size_bytes >= 1024 and unit < len(units) - 1:
         size_bytes /= 1024.0
         unit += 1
-    
+
     if unit == 0:  # bytes
-        return f"{int(size_bytes)} {units[unit]}"
+        return f"{sign}{int(size_bytes)} {units[unit]}"
     else:
-        return f"{size_bytes:.1f} {units[unit]}"
+        return f"{sign}{size_bytes:.1f} {units[unit]}"
 
 def create_autosave_file(directory: str = "leftovers") -> str:
     """
