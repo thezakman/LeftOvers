@@ -3,6 +3,7 @@ Dynamic domain-based wordlist generator.
 Integrates with existing LeftOvers structure and extensions.
 """
 
+import re
 import tldextract
 from typing import List, Set
 from urllib.parse import urlparse
@@ -140,47 +141,28 @@ class DomainWordlistGenerator:
         """
         variations = set()
 
-        # Split by common separators
-        separators = ['-', '_', '.']
-        parts = []
+        # Split on ALL common separators at once so "dev-banco_honda" yields
+        # ["dev", "banco", "honda"] (the old code split on the first separator
+        # only and used just the first two parts, dropping the rest).
+        parts = [p for p in re.split(r'[-._]+', subdomain) if p]
+        if len(parts) < 2:
+            return variations
 
-        for sep in separators:
-            if sep in subdomain:
-                parts = subdomain.split(sep)
-                break
+        # Each individual token is a useful candidate on its own.
+        variations.update(parts)
 
-        if len(parts) >= 2:
-            first_part = parts[0]
-            second_part = parts[1]
+        # Full-sequence joins (and reversed) with each separator / concatenation.
+        for sep in ('.', '_', '-', ''):
+            variations.add(sep.join(parts))
+            variations.add(sep.join(reversed(parts)))
 
-            # Permutation 1: first.second
-            variations.add(f"{first_part}.{second_part}")
-
-            # Permutation 2: first_second
-            variations.add(f"{first_part}_{second_part}")
-
-            # Permutation 3: firstsecond
-            variations.add(f"{first_part}{second_part}")
-
-            # Permutation 4: second.first
-            variations.add(f"{second_part}.{first_part}")
-
-            # Permutation 5: second_first
-            variations.add(f"{second_part}_{first_part}")
-
-            # Permutation 6: secondfirst
-            variations.add(f"{second_part}{first_part}")
-
-            # Permutation 7: first only
-            variations.add(first_part)
-
-            # Permutation 8: second only
-            variations.add(second_part)
-
-            # Additional variations with common separators
-            for sep in ['-', '_', '']:
-                variations.add(f"{first_part}{sep}{second_part}")
-                variations.add(f"{second_part}{sep}{first_part}")
+        # Adjacent pairwise combinations cover the common two-token intent for
+        # subdomains with 3+ parts without a full combinatorial blowup.
+        for i in range(len(parts) - 1):
+            a, b = parts[i], parts[i + 1]
+            for sep in ('.', '_', ''):
+                variations.add(f"{a}{sep}{b}")
+                variations.add(f"{b}{sep}{a}")
 
         return variations
 

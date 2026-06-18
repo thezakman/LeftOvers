@@ -1,6 +1,6 @@
 # LeftOvers
 
-![Version](https://img.shields.io/badge/version-1.9.3-blue.svg)
+![Version](https://img.shields.io/badge/version-1.9.4-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.7+-green.svg)
 ![License](https://img.shields.io/badge/license-MIT-orange.svg)
 ![Performance](https://img.shields.io/badge/performance-optimized-brightgreen.svg)
@@ -347,7 +347,20 @@ Contributions are welcome! Feel free to open issues or submit pull requests.
 
 ## 📝 Changelog
 
-### v1.9.3 (Latest)
+### v1.9.4 (Latest)
+
+**🧹 Cleanup & hardening:**
+- HTTP client: cap the read even when HEAD is denied/unavailable — a server
+  that blocks HEAD could otherwise stream a multi-GB body (unknown extension)
+  straight into memory. Small responses are unaffected.
+- Domain wordlist: composite-subdomain permutations now split on all separators
+  and use every token (`dev-banco_honda` → dev/banco/honda), instead of only
+  the first two parts split on a single separator.
+- url_utils: removed a dead word-classification branch in brute-force
+  generation that did work with no effect on output (and subtly reordered the
+  curated wordlist).
+
+### v1.9.3
 
 **🐛 Metrics & stats correctness:**
 - `--metrics` table is now populated — `record_request()` was never called, so

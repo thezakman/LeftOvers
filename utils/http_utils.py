@@ -449,15 +449,26 @@ class HttpClient:
                     except requests.exceptions.RequestException as inner_e:
                         result["error"] = f"Failed to fetch partial content: {str(inner_e)}"
             else:
+                # Stream with a hard cap even when HEAD didn't flag the file as
+                # large: a server that denies HEAD (405) could still serve a
+                # multi-GB body with an unrecognized extension, and a plain
+                # .content read would load all of it into memory. Small bodies
+                # finish well before the cap, so the common case is unaffected.
                 response = self.session.get(
                     url,
                     timeout=self.timeout,
+                    stream=True,
                     allow_redirects=True,
                     headers={**self.session.headers, **extra_headers} if extra_headers else None,
                 )
-
+                cap = MAX_FILE_SIZE_MB * 1024 * 1024
+                body = self._drain_capped(response, cap)
                 result["success"] = True
                 result["response"] = response
+                if len(body) >= cap:
+                    # Hit the cap — treat as a (truncated) large file.
+                    result["large_file"] = True
+                    result["partial_content"] = True
 
         except requests.exceptions.Timeout:
             result["error"] = "Request timed out"

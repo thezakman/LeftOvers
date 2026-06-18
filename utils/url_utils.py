@@ -520,31 +520,18 @@ def _generate_brute_force_tests(add_test, scheme, full_hostname, path_label, pat
             if not (word.startswith('.') or '.env.' in word or '.git' in word)
         ]
 
-    # Separate words that already have extensions from those that don't
-    words_with_extensions = []
-    words_without_extensions = []
-
-    for word in filtered_backup_words:
-        # Check if word already has a file extension (contains a dot and the part after dot is 2-5 chars)
-        if '.' in word:
-            parts = word.split('.')
-            if len(parts) >= 2 and 2 <= len(parts[-1]) <= 5 and parts[-1].isalnum():
-                words_with_extensions.append(word)
-            else:
-                words_without_extensions.append(word)
-        else:
-            words_without_extensions.append(word)
-    
-    # Normal brute force (only at the leaf directory)
+    # Normal brute force (only at the leaf directory). Words are tested in the
+    # curated wordlist order (the dedup/priority order matters); add_test
+    # deduplicates URLs across all generators.
     base = f"{scheme}://{full_hostname}/{path_label}" if path_label else f"{scheme}://{full_hostname}"
-    for word in words_with_extensions + words_without_extensions:
+    for word in filtered_backup_words:
         add_test(f"{base}/{word}", f"Brute Force: {word}")
 
     # Recursive brute force (test each level of the path)
     if brute_recursive and path_segments:
         # Create a list of path levels to test
         path_levels = [f"{scheme}://{full_hostname}"]  # Start with the root level
-        
+
         # Add each intermediate level
         current_path = ""
         for segment in path_segments[:-1]:  # Skip the last segment
@@ -552,12 +539,12 @@ def _generate_brute_force_tests(add_test, scheme, full_hostname, path_label, pat
                 current_path = segment
             else:
                 current_path = f"{current_path}/{segment}"
-            
+
             path_levels.append(f"{scheme}://{full_hostname}/{current_path}")
-        
+
         # For each path level, run brute force tests
         for level in path_levels:
-            for word in words_with_extensions + words_without_extensions:
+            for word in filtered_backup_words:
                 add_test(f"{level}/{word}", f"Brute Force Recursive: {word}")
 
 def _log_path_segments(path):
