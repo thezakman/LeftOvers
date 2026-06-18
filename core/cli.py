@@ -86,7 +86,7 @@ def parse_arguments():
     parser.add_argument("-c", "--cookie", help="Cookies to include with requests")
     parser.add_argument("-o", "--output", help="File to save results (JSON)")
     parser.add_argument("--output-per-url", action="store_true", help="Create a separate output file for each URL (when used with --list)")
-    parser.add_argument("--test-index", action="store_true", help="Test for index.{extension} on domain URLs")
+    parser.add_argument("--test-index", action="store_true", help="(Deprecated/no-op) index.{extension} is now tested by default on domain URLs")
     parser.add_argument("--rate-limit", type=float, help="Maximum requests per second (e.g., 10 for 10 req/s, 0.5 for 1 req per 2s)")
     parser.add_argument("--delay", type=int, help="Delay in milliseconds between requests (alternative to rate-limit)")
     

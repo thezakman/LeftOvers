@@ -1,6 +1,6 @@
 # LeftOvers
 
-![Version](https://img.shields.io/badge/version-1.8.0-blue.svg)
+![Version](https://img.shields.io/badge/version-1.8.1-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.7+-green.svg)
 ![License](https://img.shields.io/badge/license-MIT-orange.svg)
 ![Performance](https://img.shields.io/badge/performance-optimized-brightgreen.svg)
@@ -210,9 +210,6 @@ python LeftOvers.py -u http://example.com -a "Mozilla/5.0 MyCustomAgent"
 
 # Randomly rotate User-Agents
 python LeftOvers.py -u http://example.com -ra
-
-# Test index.{extension} on domain URLs
-python LeftOvers.py -u http://example.com --test-index
 
 # See all available options
 python LeftOvers.py --help

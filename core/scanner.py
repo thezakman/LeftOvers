@@ -322,8 +322,12 @@ class LeftOver:
             base_url = f"{base_url}/"
         
         # Build the full URL efficiently
-        if is_domain_only and self.test_index:
-            # If it's a domain and the test_index flag is enabled, test index.{extension}
+        if is_domain_only:
+            # A domain-only target has no filename to back up, so "/.ext"
+            # (a literal dotfile at the web root) is almost always noise.
+            # Probe index.{ext} instead — index.php.bak, index.html.old, etc.
+            # are the most common web-root leftovers. (The legacy --test-index
+            # flag is now the default behavior for domain targets.)
             full_url = f"{base_url.rstrip('/')}/index.{extension}"
         else:
             # Otherwise, add the extension to the end of the URL normally with a dot
@@ -489,8 +493,10 @@ class LeftOver:
 
     def _build_direct_url(self, target_url: str, extension: str) -> str:
         if self._is_domain_only(target_url):
+            # Consistent with test_url(): probe index.{ext} at the root rather
+            # than a meaningless "/.ext" dotfile.
             base = target_url if target_url.endswith('/') else target_url + '/'
-            return f"{base.rstrip('/')}/.{extension}"
+            return f"{base.rstrip('/')}/index.{extension}"
         return f"{target_url}.{extension}"
 
     def _perform_extension_test(self, target_url: str, extension: str,
@@ -505,6 +511,15 @@ class LeftOver:
         --no-ssl-verify flag are all honored.
         """
         direct_url = self._build_direct_url(target_url, extension)
+
+        # Atomically claim the URL so the regular extension loop (test_url)
+        # doesn't request the exact same URL again. Without this, every
+        # "important" extension was fetched twice (and FP frequency tables
+        # were skewed by counting the same response twice).
+        with self._tested_urls_lock:
+            if direct_url in self.tested_urls:
+                return False
+            self.tested_urls.add(direct_url)
 
         if self.verbose:
             prefix = "HIGH PRIORITY: " if important else ""
