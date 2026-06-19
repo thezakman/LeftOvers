@@ -1,6 +1,6 @@
 # LeftOvers
 
-![Version](https://img.shields.io/badge/version-1.9.5-blue.svg)
+![Version](https://img.shields.io/badge/version-1.10.0-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.7+-green.svg)
 ![License](https://img.shields.io/badge/license-MIT-orange.svg)
 ![Performance](https://img.shields.io/badge/performance-optimized-brightgreen.svg)
@@ -100,8 +100,29 @@ leftovers -u http://example.com --level 4 -b --lang pt-br
 # Stealth mode (slow but harder to detect)
 leftovers -u http://example.com --rate-limit 2 -ra
 
+# Route through Burp/mitmproxy (pair with -k for the intercepting CA)
+leftovers -u http://example.com --proxy http://127.0.0.1:8080 -k
+
 # Full-featured scan with domain wordlist
 leftovers -u http://example.com -b -d -br --output results.json
+```
+
+### Exit codes (CI/scripting)
+
+| Code | Meaning |
+|------|---------|
+| `0`  | Completed, **no** findings |
+| `1`  | Completed, **findings** found |
+| `2`  | Usage / argument / runtime error |
+| `130`| Interrupted (Ctrl+C) |
+
+```bash
+# Fail a pipeline / branch on findings
+if leftovers -u http://example.com --silent; then
+  echo "clean"
+else
+  echo "leftovers found — investigate"
+fi
 ```
 
 ## 📖 Usage
@@ -347,7 +368,15 @@ Contributions are welcome! Feel free to open issues or submit pull requests.
 
 ## 📝 Changelog
 
-### v1.9.5 (Latest)
+### v1.10.0 (Latest)
+
+**🧰 Pentest integration:**
+- `--proxy URL` routes all traffic through an HTTP proxy (Burp/mitmproxy);
+  pair with `-k` for the intercepting CA.
+- Process **exit code now reflects findings** for CI/scripting: `0` = nothing
+  found, `1` = findings found, `2` = usage/runtime error, `130` = interrupted.
+
+### v1.9.5
 
 **🧹 List input hardening:**
 - `-l/--list` now validates each line, warn-skips malformed URLs (instead of

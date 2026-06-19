@@ -115,6 +115,7 @@ def parse_arguments():
     # Boolean flags
     parser.add_argument("-nc", "--no-color", action="store_true", help="Disable colors in output")
     parser.add_argument("-k", "--no-ssl-verify", action="store_true", help="Disable SSL certificate verification")
+    parser.add_argument("--proxy", metavar="URL", help="Route all requests through a proxy, e.g. http://127.0.0.1:8080 (Burp/mitmproxy). Pair with -k for intercepting proxies.")
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose mode (show more details)")
     parser.add_argument("-s", "--silent", action="store_true", help="Silent mode (show only errors)")
     parser.add_argument("--metrics", action="store_true", help="Show performance metrics at the end of scan")
@@ -238,7 +239,8 @@ def configure_scanner_from_args(args):
         ignore_content=args.ignore_content or [],
         disable_fp=args.no_fp,
         rate_limit=rate_limit,
-        delay_ms=delay_ms
+        delay_ms=delay_ms,
+        proxy=args.proxy
     )
 
     # URL-level concurrency for -l/--list mode
@@ -343,14 +345,16 @@ def main():
                 generate_summary_report(results, console, use_color, args.verbose)
             if args.output:
                 export_results(results, args.output)
-            sys.exit(0)
+            findings = sum(1 for r in results
+                           if r.status_code != 404 and (not r.false_positive or r.status_code == 200))
+            sys.exit(1 if findings > 0 else 0)
 
         # Validate single URL if provided
         if args.url:
             is_valid, error_msg = validate_url(args.url)
             if not is_valid:
                 console.print(f"[bold red]Invalid URL:[/bold red] {error_msg}")
-                sys.exit(1)
+                sys.exit(2)
 
         scanner = configure_scanner_from_args(args)
 
@@ -360,7 +364,7 @@ def main():
             resume_path = args.resume
             if not _os.path.isfile(resume_path):
                 console.print(f"[bold red]Resume file not found:[/bold red] {resume_path}")
-                sys.exit(1)
+                sys.exit(2)
             # Load progress from the existing file
             scanner.skip_urls = load_completed_urls(resume_path)
             prev_hits = load_autosave(resume_path)
@@ -403,7 +407,11 @@ def main():
         # Export results if needed
         if args.output:
             export_results(scanner.results, args.output)
-            
+
+        # Exit code reflects findings for CI/scripting:
+        #   0 = completed, nothing found   1 = completed, findings found
+        sys.exit(1 if scanner.count_findings() > 0 else 0)
+
     except KeyboardInterrupt:
         if scanner is not None:
             scanner.close()
@@ -412,15 +420,16 @@ def main():
         # os._exit() terminates immediately without waiting for daemon threads
         # to finish their current HTTP requests (which could take minutes).
         # Autosave is already flushed on every hit, so no data is lost.
-        os._exit(1)
+        # 130 = conventional exit code for SIGINT.
+        os._exit(130)
     except ValueError as e:
         logger.error(str(e))
-        sys.exit(1)
+        sys.exit(2)
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}")
         if getattr(args, 'verbose', False):
             traceback.print_exc()
-        sys.exit(1)
+        sys.exit(2)
 
 if __name__ == "__main__":
     main()

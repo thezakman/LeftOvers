@@ -123,7 +123,8 @@ class HttpClient:
                  use_cache: bool = True,
                  max_cache_size: int = 128,
                  rate_limit: float = None,
-                 delay_ms: int = None):
+                 delay_ms: int = None,
+                 proxy: str = None):
         """
         Initialize the HTTP client with enhanced performance options.
 
@@ -161,6 +162,13 @@ class HttpClient:
         
         # Optimized connection management
         self.session = self._create_optimized_session(max_retries, backoff_factor)
+
+        # Route all traffic through a proxy (e.g. Burp/mitmproxy at
+        # http://127.0.0.1:8080) when provided. Pair with --no-ssl-verify
+        # since intercepting proxies use their own CA.
+        self.proxy = proxy
+        if proxy:
+            self.session.proxies.update({"http": proxy, "https": proxy})
 
         # Request cache using LRU for better performance
         self.request_cache = LRUCache(max_cache_size) if use_cache else None

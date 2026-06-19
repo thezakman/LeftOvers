@@ -65,7 +65,8 @@ class LeftOver:
                  ignore_content: List[str] = None,
                  disable_fp: bool = False,
                  rate_limit: float = None,
-                 delay_ms: int = None):
+                 delay_ms: int = None,
+                 proxy: str = None):
         """Initialize the scanner with the provided settings."""
         self.extensions = extensions if extensions is not None else DEFAULT_EXTENSIONS
         self.extension_optimizer = ExtensionOptimizer()
@@ -102,13 +103,15 @@ class LeftOver:
         setup_logger(verbose, silent)
         
         # HTTP client for requests - optimized with rate limiting
+        self.proxy = proxy
         self.http_client = HttpClient(
             headers=self.headers,
             timeout=self.timeout,
             verify_ssl=self.verify_ssl,
             rotate_user_agent=self.rotate_user_agent,
             rate_limit=rate_limit,
-            delay_ms=delay_ms
+            delay_ms=delay_ms,
+            proxy=proxy
         )
         
         # False-positive state is per-URL (built via _new_fp_state) to avoid
@@ -1508,6 +1511,15 @@ class LeftOver:
             self._autosave_fh.close()
         except Exception:
             pass
+
+    def count_findings(self) -> int:
+        """Number of interesting findings, matching the 'Files Found' summary
+        row: non-404 responses that are not false positives (200s always count).
+        Used to derive the process exit code."""
+        return sum(
+            1 for r in self.results
+            if r.status_code != 404 and (not r.false_positive or r.status_code == 200)
+        )
 
     def print_summary(self):
         """Print a summary of the found results - optimized version."""
