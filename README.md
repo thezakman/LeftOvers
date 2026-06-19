@@ -1,6 +1,6 @@
 # LeftOvers
 
-![Version](https://img.shields.io/badge/version-1.9.4-blue.svg)
+![Version](https://img.shields.io/badge/version-1.9.5-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.7+-green.svg)
 ![License](https://img.shields.io/badge/license-MIT-orange.svg)
 ![Performance](https://img.shields.io/badge/performance-optimized-brightgreen.svg)
@@ -347,7 +347,14 @@ Contributions are welcome! Feel free to open issues or submit pull requests.
 
 ## 📝 Changelog
 
-### v1.9.4 (Latest)
+### v1.9.5 (Latest)
+
+**🧹 List input hardening:**
+- `-l/--list` now validates each line, warn-skips malformed URLs (instead of
+  failing silently at request time), and deduplicates the list (order-preserving)
+  so a repeated URL isn't scanned twice.
+
+### v1.9.4
 
 **🧹 Cleanup & hardening:**
 - HTTP client: cap the read even when HEAD is denied/unavailable — a server

@@ -46,19 +46,36 @@ def load_url_list(file_path: str) -> List[str]:
         logger.error(f"URL list file not found: {file_path}")
         return []
     
+    from leftovers.utils.validators import validate_url
+
     try:
         with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
             # Strip whitespace and ignore empty lines and comment lines
-            urls = [line.strip() for line in f if line.strip() and not line.strip().startswith('#')]
-            
-            # Ensure all URLs have a scheme
-            normalized_urls = []
-            for url in urls:
-                if not url.startswith(('http://', 'https://')):
-                    url = 'http://' + url
-                normalized_urls.append(url)
-            
-            return normalized_urls
+            raw = [line.strip() for line in f if line.strip() and not line.strip().startswith('#')]
+
+        normalized_urls = []
+        seen = set()
+        skipped = 0
+        for url in raw:
+            # Ensure a scheme so validation and requests behave consistently
+            if not url.startswith(('http://', 'https://')):
+                url = 'http://' + url
+
+            is_valid, reason = validate_url(url)
+            if not is_valid:
+                logger.warning(f"Skipping invalid URL '{url}': {reason}")
+                skipped += 1
+                continue
+
+            # Order-preserving dedup so a repeated URL isn't scanned twice
+            if url in seen:
+                continue
+            seen.add(url)
+            normalized_urls.append(url)
+
+        if skipped:
+            logger.info(f"Loaded {len(normalized_urls)} URL(s); skipped {skipped} invalid line(s)")
+        return normalized_urls
     except Exception as e:
         logger.error(f"Error loading URL list: {str(e)}")
         return []
