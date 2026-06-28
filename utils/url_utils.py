@@ -11,7 +11,7 @@ from functools import lru_cache
 from leftovers.utils.logger import logger
 from leftovers.utils.http_utils import parse_url_full
 from leftovers.utils.domain_generator import DomainWordlistGenerator
-from leftovers.core.detection import establish_baseline, perform_sanity_check
+from leftovers.core.detection import establish_baseline
 # Compile IP pattern only once for reuse
 IP_PATTERN = re.compile(r'^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$')
 
@@ -84,27 +84,23 @@ def generate_test_urls(
     if is_ip and verbose:
         logger.info(f"Detected IP address: {hostname}. Domain-specific tests will be skipped.")
 
-    # Start parallel tasks to establish baseline and sanity checks
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        baseline_future = executor.submit(establish_baseline, http_client, base_url, verbose)
-        sanity_future = executor.submit(perform_sanity_check, http_client, base_url, verbose)
-        
-        # Process path information while waiting for HTTP responses
-        path_label = None
-        path_segments = []
-        if path:
-            segments = path.split('/')
-            if segments:
-                path_label = path
-                path_segments = segments
-        
-        # Debug logging for path segments
-        if verbose:
-            _log_path_segments(path)
-        
-        # Collect results from parallel tasks
-        main_page, baseline_responses = baseline_future.result()
-        sanity_result, sanity_data = sanity_future.result()
+    # Process path information first (cheap, no network).
+    path_label = None
+    path_segments = []
+    if path:
+        segments = path.split('/')
+        if segments:
+            path_label = path
+            path_segments = segments
+
+    if verbose:
+        _log_path_segments(path)
+
+    # Establish the baseline (main page + a batch of non-existent probes). This
+    # already characterizes the server's generic-response behavior used for
+    # false-positive detection, so a separate sanity check would only repeat
+    # the same kind of probes for no added signal.
+    main_page, baseline_responses = establish_baseline(http_client, base_url, verbose)
 
     # Use efficient data structure for duplicate control
     tests = []
@@ -116,10 +112,6 @@ def generate_test_urls(
             added_urls.add(url)
             tests.append((url, test_type))
 
-    # Log sanity check results for better understanding of server behavior
-    if verbose and sanity_result:
-        logger.info(f"Sanity check: {sanity_data.get('message', 'Server behavior analyzed')}")
-    
     # Execute test generations in parallel when possible
     tasks = []
     
