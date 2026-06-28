@@ -9,6 +9,14 @@
 
 ![LeftOvers Scanner Tool](LeftOver.png)
 
+## 🎬 Demo
+
+![LeftOvers demo](assets/demo.svg)
+
+> A `--level 2` scan against a local target, finding an exposed `.env`, a SQL
+> dump and ZIP backups in ~2.7s. Replay the raw recording with
+> `asciinema play assets/demo.cast`.
+
 **Key Features:**
 - **Scan Levels (0-4)** - From ultra-fast critical-only to exhaustive scans
 - **Language Filtering** - Filter wordlists by language (English, Portuguese, All)
