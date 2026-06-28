@@ -545,6 +545,17 @@ class LeftOver:
         parsed = urllib.parse.urlparse(url)
         return not parsed.path.strip('/')
 
+    @staticmethod
+    def _url_has_extension(base_url: str) -> bool:
+        """True if the URL's last path segment already carries a plausible file
+        extension (2-5 alphanumeric chars). Such URLs are tested once as-is
+        rather than fanned out across every extension."""
+        last = base_url.split('/')[-1]
+        if '.' not in last:
+            return False
+        ext = last.rsplit('.', 1)[-1]
+        return 2 <= len(ext) <= 5 and ext.isalnum()
+
     def _build_direct_url(self, target_url: str, extension: str) -> str:
         if self._is_domain_only(target_url):
             # Consistent with test_url(): probe index.{ext} at the root rather
@@ -753,16 +764,8 @@ class LeftOver:
             if test_type == "critical-specific":
                 total_tests += 1
             else:
-                # Check if URL already has extension
-                url_path = base_url.split('/')[-1]
-                has_extension = False
-                if '.' in url_path:
-                    parts = url_path.split('.')
-                    if len(parts) >= 2 and 2 <= len(parts[-1]) <= 5 and parts[-1].isalnum():
-                        has_extension = True
-                
-                # URLs with extensions are tested once, without extensions test all extensions
-                total_tests += 1 if has_extension else len(self.extensions)
+                # URLs with an extension are tested once; otherwise fan out across all
+                total_tests += 1 if self._url_has_extension(base_url) else len(self.extensions)
         
         # Always use progress bar, even in silent mode
         progress, task = create_progress_bar(total_tests, self.use_color)
@@ -796,14 +799,7 @@ class LeftOver:
                                 futures[future] = (base_url, "")
                                 continue
 
-                            url_path = base_url.split('/')[-1]
-                            has_extension = False
-                            if '.' in url_path:
-                                parts = url_path.split('.')
-                                if len(parts) >= 2 and 2 <= len(parts[-1]) <= 5 and parts[-1].isalnum():
-                                    has_extension = True
-
-                            if has_extension:
+                            if self._url_has_extension(base_url):
                                 future = executor.submit(
                                     self._test_single_url, base_url, "", test_type,
                                     fp_state,
@@ -1364,13 +1360,7 @@ class LeftOver:
                 if test_type == "critical-specific":
                     total_tests += 1
                 else:
-                    url_path = base_url.split('/')[-1]
-                    has_ext = (
-                        '.' in url_path
-                        and len(url_path.split('.')[-1]) in range(2, 6)
-                        and url_path.split('.')[-1].isalnum()
-                    )
-                    total_tests += 1 if has_ext else len(optimized_extensions)
+                    total_tests += 1 if self._url_has_extension(base_url) else len(optimized_extensions)
             shared_progress.update(url_task_id, total=total_tests, visible=True)
 
         test_url_groups = defaultdict(list)
@@ -1397,13 +1387,7 @@ class LeftOver:
                             )
                             futures[future] = (base_url, "")
                         else:
-                            url_path = base_url.split('/')[-1]
-                            has_ext = (
-                                '.' in url_path
-                                and len(url_path.split('.')[-1]) in range(2, 6)
-                                and url_path.split('.')[-1].isalnum()
-                            )
-                            if has_ext:
+                            if self._url_has_extension(base_url):
                                 future = executor.submit(
                                     self._test_single_url, base_url, "", test_type,
                                     fp_state,
