@@ -10,6 +10,7 @@ from typing import Dict, Tuple, Any, Set
 from leftovers.core.result import ScanResult
 from leftovers.utils.logger import logger
 from leftovers.utils.http_utils import calculate_content_hash, HttpClient
+from leftovers.app_settings import SUCCESS_STATUSES
 
 # ── False-positive detection thresholds ─────────────────────────────────────
 # Success responses (200/206) need strong evidence before being flagged,
@@ -187,8 +188,6 @@ def check_false_positive(
     Returns:
         Tuple of (is_false_positive: bool, reason: str)
     """
-    from leftovers.app_settings import SUCCESS_STATUSES
-    
     # Calculate content hash for comparison - only once
     content_hash = calculate_content_hash(response_content)
     result.content_hash = content_hash
@@ -481,8 +480,6 @@ def _is_likely_leftover_file(result: ScanResult, response_content: bytes) -> boo
     Returns:
         Boolean indicating if the file is likely a legitimate leftover
     """
-    from leftovers.app_settings import SUCCESS_STATUSES
-
     # Only apply special leftover detection for success status codes
     if result.status_code not in SUCCESS_STATUSES:
         return False

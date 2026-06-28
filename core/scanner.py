@@ -14,7 +14,7 @@ import threading
 
 import requests
 
-from leftovers.app_settings import VERSION
+from leftovers.app_settings import VERSION, MAX_FILE_SIZE_MB, SUCCESS_STATUSES
 from leftovers.core.config import (
     DEFAULT_TIMEOUT, DEFAULT_THREADS, DEFAULT_EXTENSIONS, DEFAULT_HEADERS
 )
@@ -42,6 +42,11 @@ PATH_PATTERN = re.compile(r'Path-Current-Path:\s+(.+)')
 PATH_INDIVIDUAL_PATTERN = re.compile(r'Path-Individual:\s+(.+)')
 BRUTE_FORCE_PATTERN = re.compile(r'Brute Force:\s+(.+)')
 BRUTE_RECURSIVE_PATTERN = re.compile(r'Brute Force Recursive:\s+(.+)')
+
+# Document extensions that get an extra "exact filename" probe in test_url
+# (e.g. /path/report -> /path/report.pdf). Module-level so it isn't rebuilt
+# on every test_url call.
+_DOCUMENT_EXTENSIONS = frozenset({"pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx"})
 
 class LeftOver:
     """Main scanner for finding leftover files on web servers (optimized version)."""
@@ -350,9 +355,11 @@ class LeftOver:
     def test_url(self, base_url: str, extension: str, test_type: str,
                  fp_state: Optional[Dict[str, Any]] = None) -> Optional[ScanResult]:
         """Test a single URL with a given extension - Optimized version."""
-        # Check if we are testing only a domain or a specific path efficiently
-        is_domain_only = '/' not in base_url[8:] if base_url.startswith('http://') else ('/' not in base_url[9:] if base_url.startswith('https://') else False)
-        
+        # Use the same robust path-based check as _build_direct_url so a domain
+        # target with a trailing slash ("http://host/") is also treated as
+        # domain-only and probes index.{ext} instead of the noise "/.ext".
+        is_domain_only = self._is_domain_only(base_url)
+
         # Ensure base_url ends with / for domain-only URLs to properly append extensions
         if is_domain_only and not base_url.endswith('/'):
             base_url = f"{base_url}/"
@@ -370,8 +377,7 @@ class LeftOver:
             full_url = f"{base_url}.{extension}"
         
         # For PDF and document files, we need additional tests
-        important_extensions = ["pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx"]
-        is_important_extension = extension.lower() in important_extensions
+        is_important_extension = extension.lower() in _DOCUMENT_EXTENSIONS
         
         # Add test case for direct extension test
         exact_match_url = None
@@ -483,7 +489,6 @@ class LeftOver:
                 return None
             
             # Flag file as large if needed
-            from leftovers.app_settings import MAX_FILE_SIZE_MB, SUCCESS_STATUSES
             if content_length > MAX_FILE_SIZE_MB * 1024 * 1024:
                 scan_result.large_file = True
                 
@@ -644,7 +649,11 @@ class LeftOver:
         raw = response.headers.get('Content-Length') if hasattr(response, 'headers') else None
         if raw:
             try:
-                return int(raw)
+                value = int(raw)
+                # A malformed/negative Content-Length must not slip past the
+                # --min-size filter; fall back to the actual body length.
+                if value >= 0:
+                    return value
             except (ValueError, TypeError):
                 pass
         return len(content) if content else 0
