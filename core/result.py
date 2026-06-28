@@ -49,6 +49,15 @@ class ScanResult:
             
         return result
 
+    def is_finding(self) -> bool:
+        """Whether this result counts as an interesting finding.
+
+        Single source of truth shared by the summary report, the 'Files Found'
+        count, and the process exit code: a non-404 response that is either not
+        a false positive or an outright 200 OK (200s always count).
+        """
+        return self.status_code != 404 and (not self.false_positive or self.status_code == 200)
+
     def check_ignored_content_type(self) -> bool:
         """
         Check if the content type is in the list of ignored types.

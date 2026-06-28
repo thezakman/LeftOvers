@@ -1496,13 +1496,9 @@ class LeftOver:
             pass
 
     def count_findings(self) -> int:
-        """Number of interesting findings, matching the 'Files Found' summary
-        row: non-404 responses that are not false positives (200s always count).
-        Used to derive the process exit code."""
-        return sum(
-            1 for r in self.results
-            if r.status_code != 404 and (not r.false_positive or r.status_code == 200)
-        )
+        """Number of interesting findings (see ScanResult.is_finding), matching
+        the 'Files Found' summary row. Used to derive the process exit code."""
+        return sum(1 for r in self.results if r.is_finding())
 
     def print_summary(self):
         """Print a summary of the found results - optimized version."""

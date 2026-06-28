@@ -65,11 +65,8 @@ def generate_summary_report(results: List[ScanResult], console: Console, use_col
     if fp_counts > len(results):
         fp_counts = len(results)
     
-    # Find interesting results using the optimized approach
-    interesting = [
-        r for r in results 
-        if (r.status_code != 404 and (not r.false_positive or r.status_code == 200))
-    ]
+    # Find interesting results (shared definition; see ScanResult.is_finding)
+    interesting = [r for r in results if r.is_finding()]
     
     # Detect duplicates using the content_hashes we computed earlier
     duplicate_sets = [group for group in content_hashes.values() if len(group) > 1]

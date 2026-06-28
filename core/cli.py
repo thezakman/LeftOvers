@@ -344,8 +344,7 @@ def main():
                 generate_summary_report(results, console, use_color, args.verbose)
             if args.output:
                 export_results(results, args.output)
-            findings = sum(1 for r in results
-                           if r.status_code != 404 and (not r.false_positive or r.status_code == 200))
+            findings = sum(1 for r in results if r.is_finding())
             sys.exit(1 if findings > 0 else 0)
 
         # Validate single URL if provided

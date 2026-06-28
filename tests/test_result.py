@@ -49,3 +49,21 @@ def test_mark_as_false_positive():
     r.mark_as_false_positive("reason")
     assert r.false_positive is True
     assert r.false_positive_reason == "reason"
+
+
+def _mk(status, fp=False):
+    return ScanResult(
+        url="http://x", status_code=status, content_type="text/plain",
+        content_length=1, response_time=0.1, test_type="Base URL", extension="",
+        false_positive=fp,
+    )
+
+
+def test_is_finding():
+    # 404 is never a finding, even when not a false positive
+    assert _mk(404).is_finding() is False
+    # 200 always counts, even if flagged as a (possible) false positive
+    assert _mk(200, fp=True).is_finding() is True
+    # Non-200 success/other codes only count when not a false positive
+    assert _mk(403, fp=False).is_finding() is True
+    assert _mk(403, fp=True).is_finding() is False
