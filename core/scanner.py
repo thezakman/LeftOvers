@@ -33,7 +33,6 @@ from leftovers.utils.file_utils import (
 from leftovers.utils.http_utils import HttpClient
 from leftovers.utils.url_utils import generate_test_urls
 from leftovers.utils.extension_optimizer import ExtensionOptimizer
-from leftovers.utils.domain_generator import DomainWordlistGenerator
 from leftovers.utils.metrics import ScanMetrics
 
 # Compile regular expressions once for reuse
@@ -47,6 +46,20 @@ BRUTE_RECURSIVE_PATTERN = re.compile(r'Brute Force Recursive:\s+(.+)')
 # (e.g. /path/report -> /path/report.pdf). Module-level so it isn't rebuilt
 # on every test_url call.
 _DOCUMENT_EXTENSIONS = frozenset({"pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx"})
+
+# Compound TLDs (e.g. "com.br", "co.uk") used to extract the registrable domain
+# for display. Module-level so the set isn't rebuilt on every found-result print.
+COMPOUND_TLDS = frozenset({
+    "co.uk", "com.br", "com.au", "org.br", "net.br",
+    "com.vc", "edu.br", "gov.br", "gov.uk", "gov.au",
+    "gov.za", "edu.au", "edu.uk", "ac.uk", "org.uk",
+    "net.uk", "com.mx", "com.ar", "com.co", "com.pe",
+    "com.cl", "com.ec", "com.bo", "com.uy", "com.pa",
+    "org.mx", "org.ar", "org.co", "org.pe", "org.cl",
+    "org.ec", "org.bo", "org.uy", "org.pa", "gov.mx",
+    "gov.ar", "gov.co", "gov.pe", "gov.cl", "gov.ec",
+    "gov.bo", "gov.uy", "gov.pa",
+})
 
 class LeftOver:
     """Main scanner for finding leftover files on web servers (optimized version)."""
@@ -74,7 +87,6 @@ class LeftOver:
         """Initialize the scanner with the provided settings."""
         self.extensions = extensions if extensions is not None else DEFAULT_EXTENSIONS
         self.extension_optimizer = ExtensionOptimizer()
-        self.domain_generator = DomainWordlistGenerator()
         self.timeout = timeout
         self.max_workers = threads
         self.headers = headers or DEFAULT_HEADERS.copy()
@@ -715,21 +727,14 @@ class LeftOver:
         self._perform_important_extension_tests(target_url, optimized_extensions, fp_state=fp_state)
         self._perform_direct_extension_tests(target_url, optimized_extensions, fp_state=fp_state)
 
-        enhanced_backup_words = self.backup_words
-        if hasattr(self, 'domain_wordlist') and self.domain_wordlist and self.brute_mode:
-            if self.verbose:
-                logger.info(f"Enhancing wordlist with domain-based words from {target_url}")
-            enhanced_backup_words = self.domain_generator.enhance_existing_wordlist(
-                enhanced_backup_words, target_url
-            )
-            if self.verbose:
-                logger.info(f"Wordlist enhanced: {len(self.backup_words)} -> {len(enhanced_backup_words)} words")
-
+        # generate_test_urls owns the domain-wordlist enhancement (it applies it
+        # internally when domain_wordlist is set), so pass the raw backup words
+        # to avoid enhancing the list twice per URL.
         test_urls, main_page, baseline = generate_test_urls(
             self.http_client,
             target_url,
             self.brute_mode,
-            enhanced_backup_words,
+            self.backup_words,
             self.verbose,
             self.brute_recursive,
             self.domain_wordlist,
@@ -1028,31 +1033,25 @@ class LeftOver:
         elif test_type == "Subdomain":
             hostname = parsed.netloc.split(':')[0]  # Remove port if exists
             
-            # Cache of compound domains to avoid repetitive checks
-            compound_tlds = {'co.uk', 'com.br', 'com.au', 'org.br', 'net.br', 'com.vc', 'edu.br', 'gov.br'}
-            
             # Usar tldextract para obter o subdomínio completo
             extracted = tldextract.extract(base_url)
             if extracted.subdomain:
                 return extracted.subdomain  # Retorna o subdomínio completo incluindo níveis compostos
-            
+
             # Fallback para o método antigo se tldextract falhar
             parts = hostname.split('.')
             if len(parts) >= 3:
                 return parts[0]
-            elif len(parts) == 2 and not any(hostname.endswith(f".{tld}") for tld in compound_tlds):
+            elif len(parts) == 2 and not any(hostname.endswith(f".{tld}") for tld in COMPOUND_TLDS):
                 return parts[0]
             return "[none]"
 
         elif test_type == "Domain Name":
             hostname = parsed.netloc.split(':')[0]  # Remove port if exists
             parts = hostname.split('.')
-            
-            # Identify common compound TLDs - using set for O(1) lookup
-            compound_tlds = {'co.uk', 'com.br', 'com.au', 'org.br', 'net.br', 'com.vc', 'edu.br', 'gov.br'}
-            
+
             # Check special cases for domains with compound TLDs
-            for tld in compound_tlds:
+            for tld in COMPOUND_TLDS:
                 if hostname.endswith(f".{tld}"):
                     # If it's a domain with subdomain and compound TLD: sub.domain.com.br
                     if len(parts) > 3:
@@ -1072,22 +1071,9 @@ class LeftOver:
         elif test_type == "Domain":
             hostname = parsed.netloc.split(':')[0]  # Remove port if exists
             parts = hostname.split('.')
-            
-            # Identify common compound TLDs - using set for O(1) lookup
-            compound_tlds = {
-                "co.uk", "com.br", "com.au", "org.br", "net.br",
-                "com.vc", "edu.br", "gov.br", "gov.uk", "gov.au",
-                "gov.za", "edu.au", "edu.uk", "ac.uk", "org.uk",
-                "net.uk", "com.mx", "com.ar", "com.co", "com.pe",
-                "com.cl", "com.ec", "com.bo", "com.uy", "com.pa",
-                "org.mx", "org.ar", "org.co", "org.pe", "org.cl",
-                "org.ec", "org.bo", "org.uy", "org.pa", "gov.mx",
-                "gov.ar", "gov.co", "gov.pe", "gov.cl", "gov.ec",
-                "gov.bo", "gov.uy", "gov.pa"
-            }
-            
+
             # Check special cases for domains with compound TLDs
-            for tld in compound_tlds:
+            for tld in COMPOUND_TLDS:
                 if hostname.endswith(f".{tld}"):
                     # If it's a domain with subdomain and compound TLD: sub.domain.com.br
                     if len(parts) > 3:
@@ -1352,21 +1338,13 @@ class LeftOver:
             suppress_print=in_list_mode, fp_state=fp_state,
         )
 
-        enhanced_backup_words = self.backup_words
-        if hasattr(self, 'domain_wordlist') and self.domain_wordlist and self.brute_mode:
-            if self.verbose:
-                logger.info(f"Enhancing wordlist with domain-based words from {target_url}")
-            enhanced_backup_words = self.domain_generator.enhance_existing_wordlist(
-                self.backup_words, target_url
-            )
-            if self.verbose:
-                logger.info(f"Wordlist enhanced: {len(self.backup_words)} -> {len(enhanced_backup_words)} words")
-
+        # generate_test_urls applies the domain-wordlist enhancement internally
+        # when domain_wordlist is set, so pass raw backup words (no double work).
         test_urls, local_main_page, local_baseline = generate_test_urls(
             self.http_client,
             target_url,
             self.brute_mode,
-            enhanced_backup_words,
+            self.backup_words,
             self.verbose,
             self.brute_recursive,
             self.domain_wordlist,
