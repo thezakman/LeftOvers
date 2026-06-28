@@ -1,6 +1,6 @@
 # LeftOvers
 
-![Version](https://img.shields.io/badge/version-1.10.0-blue.svg)
+![Version](https://img.shields.io/badge/version-1.10.7-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.7+-green.svg)
 ![License](https://img.shields.io/badge/license-MIT-orange.svg)
 ![Performance](https://img.shields.io/badge/performance-optimized-brightgreen.svg)
@@ -368,7 +368,31 @@ Contributions are welcome! Feel free to open issues or submit pull requests.
 
 ## 📝 Changelog
 
-### v1.10.0 (Latest)
+### v1.10.1–1.10.7 (Latest)
+
+**🧹 Cleanup, optimization & robustness:**
+- Removed dead code (unreferenced helpers, debug/console functions, unused
+  imports) and the redundant per-URL **sanity check** (it fired up to 3 extra
+  HTTP requests per URL that fed nothing — `establish_baseline` already covers
+  generic-response detection).
+- Stopped enhancing the brute-force wordlist **twice per URL** (the domain
+  wordlist was generated once in the scanner and again in `generate_test_urls`).
+- Hoisted hot-path constants/imports out of per-request code; consolidated the
+  compound-TLD set and the "URL already has an extension" check that were
+  duplicated several times.
+- `test_url` now uses the same robust domain-only check as the direct path, so
+  `http://host/` probes `index.{ext}` instead of the noise `/.ext`.
+- `Content-Length` headers that are negative/malformed no longer slip past
+  `--min-size`; centralized the "is this a finding" rule in one place.
+- `setup.py` reads the version from `__version__.py` (was a stale hardcoded one).
+
+### v1.10.0
+
+**🧰 Pentest integration:**
+- `--proxy URL` routes all traffic through an HTTP proxy (Burp/mitmproxy);
+  pair with `-k` for the intercepting CA.
+- Process **exit code now reflects findings** for CI/scripting: `0` = nothing
+  found, `1` = findings found, `2` = usage/runtime error, `130` = interrupted.
 
 **🧰 Pentest integration:**
 - `--proxy URL` routes all traffic through an HTTP proxy (Burp/mitmproxy);

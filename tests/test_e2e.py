@@ -4,8 +4,6 @@ Skips with a clear reason if the LeftOver constructor can't be instantiated
 in-process (e.g. missing optional dependency).
 """
 
-import pytest
-
 from leftovers.core.scanner import LeftOver
 
 

@@ -2,15 +2,12 @@
 
 from collections import defaultdict
 
-import pytest
-
 from leftovers.core.detection import check_false_positive
 from leftovers.core.result import ScanResult
 from leftovers.utils.http_utils import calculate_content_hash
 
 
 def _make_result(status=200, ctype="text/html", length=None, url="http://x/a.bak", ext="bak"):
-    content = b""
     return ScanResult(
         url=url,
         status_code=status,

@@ -1,7 +1,6 @@
 """Tests for utils.file_utils."""
 
 import json
-import os
 
 from leftovers.core.result import ScanResult
 from leftovers.utils.file_utils import (
