@@ -16,15 +16,14 @@ import requests
 
 from leftovers.app_settings import VERSION
 from leftovers.core.config import (
-    DEFAULT_TIMEOUT, DEFAULT_THREADS, DEFAULT_EXTENSIONS,
-    DEFAULT_BACKUP_WORDS, DEFAULT_HEADERS, USER_AGENTS
+    DEFAULT_TIMEOUT, DEFAULT_THREADS, DEFAULT_EXTENSIONS, DEFAULT_HEADERS
 )
 from leftovers.core.result import ScanResult
 from leftovers.core.detection import check_false_positive
 from leftovers.utils.logger import logger, setup_logger
 from leftovers.utils.console import (
-    console, print_banner, print_info_panel, 
-    create_progress_bar, format_and_print_result, create_url_list_progress,
+    console, print_banner, print_info_panel,
+    create_progress_bar, format_and_print_result,
     print_section_separator
 )
 from leftovers.utils.file_utils import (
@@ -140,10 +139,7 @@ class LeftOver:
         
         # Performance metrics tracking
         self.metrics = ScanMetrics()
-        
-        # Global sanity check results
-        self._global_sanity_check_results = {}
-        
+
         # Optimization: use sets for tested and found URLs control
         self.tested_urls = set()
         self.found_urls = set()
@@ -1275,7 +1271,7 @@ class LeftOver:
             if self.use_color:
                 console.print()
                 console.print("[bold green]List Processing Completed![/bold green]")
-                console.print(f"[bold cyan]Global Statistics:[/bold cyan]")
+                console.print("[bold cyan]Global Statistics:[/bold cyan]")
                 console.print(f"  Total time:     {global_elapsed:.2f}s")
                 console.print(f"  URLs processed: {total_urls}")
                 console.print(f"  Total requests: {total_requests}")

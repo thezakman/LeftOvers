@@ -2,16 +2,14 @@
 URL generation and manipulation utilities - Optimized for maximum performance.
 """
 
-from typing import List, Tuple, Dict, Any, Set, Optional
+from typing import List, Tuple, Dict
 import urllib.parse
 import re
-from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
-import tldextract
 
 from leftovers.utils.logger import logger
-from leftovers.utils.http_utils import parse_url, parse_url_full
+from leftovers.utils.http_utils import parse_url_full
 from leftovers.utils.domain_generator import DomainWordlistGenerator
 from leftovers.core.detection import establish_baseline, perform_sanity_check
 # Compile IP pattern only once for reuse
@@ -209,7 +207,7 @@ def _generate_critical_file_tests(add_test, scheme, full_hostname, baseline_resp
         
         if error_behaviors:
             logger.info(f"Server error behavior: {', '.join(error_behaviors)}")
-            logger.info(f"This will be used to filter false positives in critical file testing")
+            logger.info("This will be used to filter false positives in critical file testing")
     
     # Test each critical file at the root level
     if verbose:
@@ -390,9 +388,6 @@ def _generate_path_tests(add_test, scheme, full_hostname, path_label, path_segme
 
 def _generate_ip_path_tests(add_test, scheme, full_hostname, path_label, path_segments):
     """Generate path-based tests for IP addresses without domain-related tests."""
-    # Generate partial paths for testing
-    path_bases = _generate_partial_paths(path_segments)
-    
     # Test each path segment individually
     for segment in path_segments:
         if '.' not in segment:  # Don't test files

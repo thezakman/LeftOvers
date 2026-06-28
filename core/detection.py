@@ -651,7 +651,6 @@ def _check_spa_fallback(html_content: str, url: str) -> str:
         String describing SPA indicators if detected, empty string otherwise
     """
     # Get the file extension from the URL
-    url_lower = url.lower()
     requested_extension = ""
     if '.' in url:
         requested_extension = url.split('.')[-1].lower()

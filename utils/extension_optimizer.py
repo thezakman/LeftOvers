@@ -2,9 +2,8 @@
 Extension optimization and prioritization for LeftOvers scanner.
 """
 
-from typing import List, Dict, Set
+from typing import List, Dict
 from urllib.parse import urlparse
-import tldextract
 
 from leftovers.core.config import (
     ARCHIVE_EXTENSIONS, BACKUP_SUFFIXES, DATABASE_EXTENSIONS,
@@ -83,12 +82,10 @@ class ExtensionOptimizer:
         return optimized
 
     def _analyze_target_context(self, target_url: str) -> Dict[str, bool]:
-        """Analyze target URL for context clues."""
+        """Analyze target URL for context clues that reorder extensions."""
         context = {
             'likely_backup_site': False,
             'likely_development': False,
-            'likely_admin': False,
-            'likely_api': False
         }
 
         parsed = urlparse(target_url)
@@ -113,18 +110,6 @@ class ExtensionOptimizer:
         if any(indicator in hostname for indicator in dev_indicators):
             context['likely_development'] = True
 
-        # Check for admin indicators
-        admin_indicators = ['admin', 'manage', 'control', 'panel', 'dashboard']
-
-        if any(indicator in hostname or indicator in path for indicator in admin_indicators):
-            context['likely_admin'] = True
-
-        # Check for API indicators
-        api_indicators = ['api', 'service', 'webservice', 'rest', 'graphql']
-
-        if any(indicator in hostname or indicator in path for indicator in api_indicators):
-            context['likely_api'] = True
-
         return context
 
     def _sort_by_backup_likelihood(self, extensions: List[str]) -> List[str]:
@@ -139,48 +124,3 @@ class ExtensionOptimizer:
         }
 
         return sorted(extensions, key=lambda x: backup_priority.get(x, 0), reverse=True)
-
-    def add_contextual_extensions(self, base_extensions: List[str],
-                                target_url: str) -> List[str]:
-        """
-        Add contextual extensions based on target analysis.
-
-        Args:
-            base_extensions: Base extension list
-            target_url: Target URL for analysis
-
-        Returns:
-            Extended list with contextual extensions
-        """
-        context = self._analyze_target_context(target_url)
-        additional_extensions = set()
-
-        # Add extensions based on context
-        if context['likely_backup_site']:
-            additional_extensions.update([
-                'sql.gz', 'sql.bz2', 'db.gz', 'dump.gz',
-                'tar.bz2', 'tar.xz', 'backup.zip'
-            ])
-
-        if context['likely_development']:
-            additional_extensions.update([
-                'env.backup', 'config.bak', 'settings.old',
-                'local.env', 'dev.config', 'test.json'
-            ])
-
-        if context['likely_admin']:
-            additional_extensions.update([
-                'users.sql', 'admin.bak', 'passwords.txt',
-                'credentials.json', 'keys.txt'
-            ])
-
-        if context['likely_api']:
-            additional_extensions.update([
-                'swagger.json', 'openapi.yaml', 'api.json',
-                'endpoints.txt', 'routes.js'
-            ])
-
-        # Combine and remove duplicates
-        extended_extensions = list(set(base_extensions + list(additional_extensions)))
-
-        return self.optimize_extensions(extended_extensions, target_url)

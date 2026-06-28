@@ -5,7 +5,6 @@ Console utilities for LeftOvers. Handles pretty output and formatting.
 # Fix for macOS permission issues with os.getcwd() in rich module
 import os
 import re
-import sys
 import shutil
 
 # Patch os.getcwd to avoid permission issues in macOS
@@ -23,15 +22,10 @@ os.getcwd = safe_getcwd
 
 # Now it's safe to import rich
 from rich.console import Console
-from rich.table import Table
 from rich.panel import Panel
 from rich.progress import (
-    Progress, SpinnerColumn, TextColumn, BarColumn,
-    MofNCompleteColumn, TaskProgressColumn, TimeElapsedColumn, TimeRemainingColumn,
+    Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn,
 )
-from rich import box
- 
-from leftovers.utils.file_utils import format_size
 
 def get_terminal_width():
     """Get the terminal width, with fallback if detection fails."""
@@ -107,14 +101,6 @@ def print_info_panel(text: str, use_color: bool = True, backup_words_count: int 
         print(f" {full_text}")
         print("=" * 50 + "\n")
 
-def print_large_file_warning(max_size_mb, use_color=True):
-    """Print a warning about large file handling."""
-    warning = f"Files larger than {max_size_mb}MB will not be fully downloaded for performance reasons."
-    if use_color:
-        console.print(Panel(warning, title="[bold yellow]Large Files Warning[/bold yellow]", border_style="yellow"))
-    else:
-        print(f"WARNING: {warning}")
-
 def create_progress_bar(total, use_color=True):
     """Create and return a progress bar."""
     progress = Progress(
@@ -127,101 +113,6 @@ def create_progress_bar(total, use_color=True):
     )
     task_id = progress.add_task("[cyan]Scanning...", total=total)
     return progress, task_id
-
-def print_results_table(results, use_color=True, max_size_mb=50):
-    """Print a table of scan results."""
-    if not results:
-        return
-
-    # Calculate dynamic URL column width based on terminal width
-    terminal_width = get_terminal_width()
-    # Reserve space for other columns: Status(8) + Size(10) + Type(24) + Notes(20) + borders/padding(~15)
-    reserved_width = 8 + 10 + 24 + 20 + 15
-    url_max_width = max(terminal_width - reserved_width, 60)  # Minimum 60 chars for URL
-
-    table = Table(title="Scan Results", box=box.ROUNDED, show_header=True, header_style="bold")
-    table.add_column("URL", style="cyan" if use_color else "", no_wrap=False, max_width=url_max_width)
-    table.add_column("Status", style="magenta" if use_color else "", width=8, justify="center")
-    table.add_column("Size", style="green" if use_color else "", width=10, justify="right")
-    table.add_column("Type", style="blue" if use_color else "", width=24)
-    table.add_column("Notes", style="yellow" if use_color else "")
-
-    for result in results:
-        # Check if we are dealing with a dictionary or ScanResult object
-        is_dict = isinstance(result, dict)
-        
-        status_code = result.get("status_code", 0) if is_dict else result.status_code
-        
-        # Process file size with formatting function for better readability
-        if is_dict:
-            file_size = result.get("content_length", 0)
-        else:
-            file_size = result.content_length if hasattr(result, "content_length") else 0
-        
-        # Format file size with helper function
-        file_size_str = format_size(file_size)
-            
-        # Check additional notes
-        notes = ""
-        
-        # Check if it's a large file
-        is_large_file = False
-        if file_size > max_size_mb * 1024 * 1024:
-            notes = "Large file detected!"
-            is_large_file = True
-                
-        # Check false positives
-        if hasattr(result, "false_positive") and result.false_positive:
-            if notes:
-                notes += " | "
-            notes += f"False positive: {result.false_positive_reason if hasattr(result, 'false_positive_reason') else 'Yes'}"
-        
-        # Format status code with colors
-        if use_color:
-            status_text = _format_status_with_color(status_code)
-        else:
-            status_text = str(status_code)
-        
-        # Get URL and content type
-        url = result.get("url", "") if is_dict else (result.url if hasattr(result, "url") else "")
-        content_type = result.get("content_type", "") if is_dict else (result.content_type if hasattr(result, "content_type") else "")
-        
-        # Simplify content type for display
-        content_type = _format_content_type(content_type)
-        
-        # Truncate URL if too long based on dynamic width
-        if len(url) > url_max_width:
-            url = url[:url_max_width-3] + "..."
-            
-        # Apply special style for large files or false positives
-        url_style = ""
-        if is_large_file and use_color:
-            url_style = "dim cyan"
-        elif hasattr(result, "false_positive") and result.false_positive and use_color:
-            url_style = "dim cyan"
-            
-        table.add_row(
-            f"[{url_style}]{url}[/{url_style}]" if url_style else url,
-            status_text,
-            file_size_str,
-            content_type,
-            notes
-        )
-
-    console.print(table)
-
-def _format_status_with_color(status_code):
-    """Helper function to format status code with appropriate color."""
-    if status_code == 200:
-        status_style = "green"
-    elif status_code in [401, 403]:
-        status_style = "yellow"
-    elif status_code >= 400:
-        status_style = "red"
-    else:
-        status_style = "blue"
-        
-    return f"[{status_style}]{status_code}[/{status_style}]"
 
 def _format_content_type(content_type):
     """Helper function to format and simplify content type strings."""
@@ -293,19 +184,6 @@ def shorten_url(url: str, max_len: int) -> str:
 
     head_budget = max_len - len(tail) - 2  # reserve 1 for "…" and 1 for "/"
     return f"{stripped[:head_budget]}{ell}/{tail}"
-
-def print_summary(found_count, total_count, use_color=True):
-    """Print a summary of the scan."""
-    if use_color:
-        if found_count > 0:
-            console.print(f"\n[bold green]Found {found_count} residual files out of {total_count} tests.[/bold green]")
-        else:
-            console.print("\n[yellow]No residual files found.[/yellow]")
-    else:
-        if found_count > 0:
-            print(f"\nFound {found_count} residual files out of {total_count} tests.")
-        else:
-            print("\nNo residual files found.")
 
 def format_and_print_result(console, result, use_color=True, verbose=False, silent=False, max_size_mb=50):
     """Format and print a result with colors according to HTTP status."""
@@ -483,55 +361,3 @@ def format_and_print_result(console, result, use_color=True, verbose=False, sile
             if not hasattr(result, 'false_positive') or not result.false_positive or result.status_code in SUCCESS_STATUSES or verbose:
                 print(line)
 
-def print_large_file_skipped(url, size_mb, max_size_mb, use_color=True):
-    """Print a message when a large file is skipped."""
-    message = f"Skipped full download: {url} (Size: {size_mb:.2f}MB exceeds limit of {max_size_mb}MB)"
-    if use_color:
-        console.print(f"[yellow]{message}[/yellow]")
-    else:
-        print(message)
-
-def print_url_list_progress(current: int, total: int, url: str, use_color: bool = True):
-    """Print progress information for URL list processing."""
-    percentage = (current / total) * 100
-    
-    if use_color:
-        # Create a more compact visual progress bar
-        filled_blocks = int(percentage / 10)
-        progress_bar = f"[{'█' * filled_blocks}{' ' * (10 - filled_blocks)}]"
-        
-        # Show progress information in a single clean line
-        console.print(f"[bold blue]── URL {current}/{total} {progress_bar} {percentage:.1f}% ── [cyan]{url}[/cyan][/bold blue]")
-    else:
-        progress_bar = f"[{'#' * int(percentage // 10)}{' ' * (10 - int(percentage // 10))}]"
-        print(f"── URL {current}/{total} {progress_bar} {percentage:.1f}% ── {url}")
-
-def create_url_list_progress(total: int, use_color: bool = True):
-    """Create a progress bar for URL list processing."""
-    from rich.table import Column
-
-    try:
-        _term_w = shutil.get_terminal_size().columns
-    except Exception:
-        _term_w = 120
-    _fixed_cols = 56
-    _desc_max = max(20, _term_w - _fixed_cols)
-
-    progress = Progress(
-        SpinnerColumn(),
-        TextColumn(
-            "[progress.description]{task.description}",
-            table_column=Column(no_wrap=True, max_width=_desc_max),
-        ),
-        BarColumn(),
-        MofNCompleteColumn(),
-        TextColumn("•"),
-        TimeElapsedColumn(),
-        TextColumn("•"),
-        TimeRemainingColumn(),
-        console=console if use_color else None,
-        transient=False,
-        refresh_per_second=4,
-    )
-    task_id = progress.add_task("[cyan]Starting…", total=total)
-    return progress, task_id

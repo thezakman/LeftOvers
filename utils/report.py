@@ -2,7 +2,7 @@
 Report generation utilities for LeftOvers.
 """
 
-from typing import List, Dict, Any
+from typing import List
 from rich.table import Table
 from rich.console import Console
 from rich import box

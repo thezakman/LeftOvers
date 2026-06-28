@@ -542,28 +542,6 @@ class HttpClient:
         # Check if URL ends with any of these extensions
         return any(url.lower().endswith(ext) for ext in large_file_extensions)
     
-    def clear_cache(self):
-        """Clear the request cache."""
-        if self.request_cache:
-            self.request_cache.clear()
-        self.cache_hits = 0
-        self.cache_misses = 0
-
-    def get_cache_stats(self) -> Dict[str, Any]:
-        """Get cache statistics."""
-        total_requests = self.cache_hits + self.cache_misses
-        hit_rate = self.cache_hits / total_requests if total_requests > 0 else 0
-
-        return {
-            "enabled": bool(self.request_cache),
-            "size": len(self.request_cache) if self.request_cache else 0,
-            "max_size": self.request_cache.max_size if self.request_cache else 0,
-            "hits": self.cache_hits,
-            "misses": self.cache_misses,
-            "hit_rate": hit_rate,
-            "total_requests": total_requests
-        }
-
 def parse_url(url: str) -> Tuple[str, str, str]:
     """Parse a URL into its base, domain and path components."""
     parsed = urlparse(url)

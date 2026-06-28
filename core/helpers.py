@@ -17,8 +17,6 @@ from leftovers.core.config import (
     VCS_LEFTOVER_EXTENSIONS,
     DOCUMENT_BACKUP_EXTENSIONS,
     BUILD_CONFIG_EXTENSIONS,
-    LEGACY_EXTENSIONS,
-    CONFIG_BACKUP_EXTENSIONS,
     DEFAULT_EXTENSIONS,
     DEFAULT_FILES_WORDS,
     EN_COMMON_WORDS,
@@ -40,8 +38,6 @@ from leftovers.core.config import (
     CRITICAL_SPECIFIC_FILES,
     SPECIFIC_FILES,
     VCS_SPECIFIC_FILES,
-    BACKUP_SUFFIXES,
-    DATABASE_CONFIG_WORDS,
 )
 
 
@@ -65,74 +61,6 @@ def get_brute_words_by_level(level: int = 2) -> list:
     if level >= 4:
         return EXHAUSTIVE_BACKUP_WORDS
     return DEFAULT_BACKUP_WORDS
-
-
-def get_extensions_by_priority(priority: str = "all") -> list:
-    """
-    Get extensions filtered by priority level.
-    
-    Args:
-        priority: Priority level - "critical", "high", "medium", "all"
-    
-    Returns:
-        List of extensions for the specified priority
-    """
-    if priority == "critical":
-        return CRITICAL_BACKUP_EXTENSIONS
-    elif priority == "high":
-        return [*CRITICAL_BACKUP_EXTENSIONS, *SECURITY_EXTENSIONS, *CODE_BACKUP_EXTENSIONS]
-    elif priority == "medium":
-        return [*CRITICAL_BACKUP_EXTENSIONS, *SECURITY_EXTENSIONS, 
-                *CODE_BACKUP_EXTENSIONS, *CONFIG_LOG_EXTENSIONS]
-    else:  # all
-        return DEFAULT_EXTENSIONS
-
-
-def get_extensions_by_category(category: str) -> list:
-    """
-    Get extensions by specific category.
-    
-    Args:
-        category: Category name - "backup", "database", "config", "security", 
-                  "archive", "code", "ide", "vcs", "document", "build"
-    
-    Returns:
-        List of extensions for the specified category
-    """
-    categories = {
-        "backup": CRITICAL_BACKUP_EXTENSIONS,
-        "database": DATABASE_EXTENSIONS,
-        "config": CONFIG_EXTENSIONS,
-        "security": SECURITY_EXTENSIONS,
-        "archive": ARCHIVE_EXTENSIONS,
-        "code": CODE_BACKUP_EXTENSIONS,
-        "ide": IDE_LEFTOVER_EXTENSIONS,
-        "vcs": VCS_LEFTOVER_EXTENSIONS,
-        "document": DOCUMENT_BACKUP_EXTENSIONS,
-        "build": BUILD_CONFIG_EXTENSIONS,
-    }
-    return categories.get(category, [])
-
-
-def get_optimized_extension_set(max_extensions: int = 50) -> list:
-    """
-    Get an optimized set of most effective extensions for fast scanning.
-    
-    Args:
-        max_extensions: Maximum number of extensions to return
-    
-    Returns:
-        List of most effective extensions limited to max_extensions
-    """
-    # Prioritize most common and dangerous leftovers
-    priority_order = [
-        *CRITICAL_BACKUP_EXTENSIONS[:15],  # Top backup extensions
-        *SECURITY_EXTENSIONS[:10],          # Top security files
-        *DATABASE_EXTENSIONS[:8],           # Top database files
-        *CODE_BACKUP_EXTENSIONS[:10],       # Top code backups
-        *CONFIG_EXTENSIONS[:7],             # Top config files
-    ]
-    return priority_order[:max_extensions]
 
 
 def get_words_by_language(language: str = "all") -> list:
@@ -179,20 +107,6 @@ def get_specific_files(priority: str = "all") -> list:
     else:
         # Return critical files first, then others
         return [*CRITICAL_SPECIFIC_FILES, *SPECIFIC_FILES, *VCS_SPECIFIC_FILES]
-
-
-def get_all_test_targets() -> dict:
-    """
-    Get all test targets organized by type.
-    
-    Returns:
-        Dictionary with extensions, words, and specific files
-    """
-    return {
-        "extensions": DEFAULT_EXTENSIONS,
-        "words": DEFAULT_BACKUP_WORDS,
-        "specific_files": get_specific_files()
-    }
 
 
 def get_config_by_level(level: int = 2) -> dict:

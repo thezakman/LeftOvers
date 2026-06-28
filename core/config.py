@@ -15,10 +15,7 @@ and to allow selective scanning based on threat level.
 from leftovers.app_settings import (
     DEFAULT_TIMEOUT,
     DEFAULT_THREADS,
-    MAX_FILE_SIZE_MB,
-    USER_AGENTS,
     DEFAULT_USER_AGENT,
-    IGNORE_CONTENT
 )
 # Default headers for HTTP requests
 DEFAULT_HEADERS = {

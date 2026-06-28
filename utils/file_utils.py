@@ -5,9 +5,8 @@ File utilities for the LeftOvers scanner.
 import os
 import json
 from datetime import datetime
-from typing import List, Dict, Any
+from typing import List, Any
 
-from typing import IO
 from leftovers.utils.logger import logger
 
 def load_wordlist(file_path: str) -> List[str]:

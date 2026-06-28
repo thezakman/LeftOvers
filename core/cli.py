@@ -11,15 +11,14 @@ import _thread
 
 from leftovers.app_settings import VERSION
 from leftovers.core.config import (
-    DEFAULT_TIMEOUT, DEFAULT_THREADS, DEFAULT_EXTENSIONS,
-    DEFAULT_HEADERS
+    DEFAULT_TIMEOUT, DEFAULT_THREADS, DEFAULT_HEADERS
 )
 from leftovers.core.scanner import LeftOver
 from leftovers.core.detection import parse_status_codes
 from leftovers.utils.logger import logger
-from leftovers.utils.console import console, print_banner, print_info_panel
+from leftovers.utils.console import console, print_banner
 from leftovers.utils.file_utils import (
-    load_wordlist, load_url_list, export_results,
+    load_wordlist, export_results,
     load_autosave, load_completed_urls,
 )
 

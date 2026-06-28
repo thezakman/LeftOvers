@@ -4,7 +4,7 @@ Classes for storing and processing scan results.
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any
 
 from leftovers.app_settings import IGNORE_CONTENT
 

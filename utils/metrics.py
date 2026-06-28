@@ -229,7 +229,7 @@ class ScanMetrics:
             table.add_row(
                 "Total Requests",
                 f"{total_req:,}",
-                f"✓ {success_req:,} success, ✗ {failed_req:,} failed" if failed_req > 0 else f"✓ All successful"
+                f"✓ {success_req:,} success, ✗ {failed_req:,} failed" if failed_req > 0 else "✓ All successful"
             )
             
             # Success rate

@@ -5,7 +5,7 @@ Logging configuration for the LeftOvers scanner.
 import logging
 import sys
 import os
-from typing import Optional, Dict, Any
+from typing import Optional
 from logging.handlers import RotatingFileHandler
 
 # Create a central logger instance
@@ -123,37 +123,3 @@ def _setup_file_handler(log_file: str, level: int) -> None:
         logger.info(f"Logging to file: {log_file}")
     except (IOError, PermissionError) as e:
         logger.warning(f"Could not set up log file {log_file}: {str(e)}")
-
-def get_logging_stats() -> Dict[str, Any]:
-    """
-    Get statistics about the logging configuration.
-    
-    Returns:
-        Dictionary with logging statistics
-    """
-    stats = {
-        "level": logging.getLevelName(logger.level),
-        "handlers": [],
-        "log_files": []
-    }
-    
-    # Collect information about handlers
-    for handler in logger.handlers:
-        handler_info = {
-            "type": handler.__class__.__name__,
-            "level": logging.getLevelName(handler.level)
-        }
-        
-        # Add file path for file handlers
-        if isinstance(handler, (logging.FileHandler, RotatingFileHandler)):
-            handler_info["file"] = handler.baseFilename
-            stats["log_files"].append(handler.baseFilename)
-            
-            # Add rotation info for RotatingFileHandler
-            if isinstance(handler, RotatingFileHandler):
-                handler_info["max_bytes"] = handler.maxBytes
-                handler_info["backup_count"] = handler.backupCount
-        
-        stats["handlers"].append(handler_info)
-    
-    return stats

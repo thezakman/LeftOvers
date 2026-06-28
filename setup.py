@@ -1,11 +1,24 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-from setuptools import setup, find_packages
+import re
+from pathlib import Path
+
+from setuptools import setup
+
+# Single source of truth: read the version straight from __version__.py so it
+# never drifts from pyproject.toml / the package's __version__.
+_version_text = (Path(__file__).parent / "__version__.py").read_text(encoding="utf-8")
+_version_match = re.search(
+    r'^__version__\s*=\s*["\']([^"\']+)["\']', _version_text, re.MULTILINE
+)
+if not _version_match:
+    raise RuntimeError("Unable to find __version__ in __version__.py")
+VERSION = _version_match.group(1)
 
 setup(
     name="LeftOvers",
-    version="1.5.0",
+    version=VERSION,
     description="An advanced scanner to find residual files on web servers",
     author="TheZakMan",
     packages=["leftovers", "leftovers.core", "leftovers.utils"],
